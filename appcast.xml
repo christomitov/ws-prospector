@@ -1,11 +1,15 @@
-<?xml version="1.0" encoding="utf-8"?>
-<rss version="2.0"
-     xmlns:sparkle="http://www.andymatuschak.org/xml-namespaces/sparkle"
-     xmlns:dc="http://purl.org/dc/elements/1.1/">
-  <channel>
-    <title>Wealthsimple Prospector Updates</title>
-    <link>https://christomitov.github.io/ws-prospector/</link>
-    <description>Sparkle appcast feed for Wealthsimple Prospector.</description>
-    <language>en</language>
-  </channel>
+<?xml version="1.0" standalone="yes"?>
+<rss xmlns:sparkle="http://www.andymatuschak.org/xml-namespaces/sparkle" version="2.0">
+    <channel>
+        <title>Wealthsimple Prospector</title>
+        <item>
+            <title>1.0.0</title>
+            <pubDate>Tue, 24 Feb 2026 22:11:02 -0500</pubDate>
+            <sparkle:version>1</sparkle:version>
+            <sparkle:shortVersionString>1.0.0</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>12.0</sparkle:minimumSystemVersion>
+            <sparkle:hardwareRequirements>arm64</sparkle:hardwareRequirements>
+            <enclosure url="https://github.com/christomitov/ws-prospector/releases/download/wealthsimple-prospector-macos.dmg" length="77269383" type="application/octet-stream" sparkle:edSignature="9BmvgzW6NWRPp7ka4kLsBDLpZgHiQWLwQyJDqI3IrgTcD7i9xHubtonk/pQGFfadmskNW/rVvHyKwXydAUvmBA=="/>
+        </item>
+    </channel>
 </rss>
