@@ -29,6 +29,10 @@ final class LauncherAppDelegate: NSObject, NSApplicationDelegate {
         stopServer()
     }
 
+    func applicationDockMenu(_ sender: NSApplication) -> NSMenu? {
+        return buildActionsMenu(includeKeyEquivalents: false)
+    }
+
     @objc private func openDashboard(_ sender: Any?) {
         openDashboardDebounced()
     }
@@ -53,30 +57,34 @@ final class LauncherAppDelegate: NSObject, NSApplicationDelegate {
         let appMenuItem = NSMenuItem()
         mainMenu.addItem(appMenuItem)
 
-        let appMenu = NSMenu()
+        let appMenu = buildActionsMenu(includeKeyEquivalents: true)
+        appMenuItem.submenu = appMenu
+        NSApp.mainMenu = mainMenu
+    }
+
+    private func buildActionsMenu(includeKeyEquivalents: Bool) -> NSMenu {
+        let menu = NSMenu()
         #if canImport(Sparkle)
-        appMenu.addItem(
+        menu.addItem(
             withTitle: "Check for Updates...",
             action: #selector(checkForUpdates(_:)),
             keyEquivalent: ""
         )
-        appMenu.addItem(NSMenuItem.separator())
+        menu.addItem(NSMenuItem.separator())
         #endif
-        appMenu.addItem(
+        menu.addItem(
             withTitle: "Open Dashboard",
             action: #selector(openDashboard(_:)),
-            keyEquivalent: "o"
+            keyEquivalent: includeKeyEquivalents ? "o" : ""
         )
-        appMenu.addItem(NSMenuItem.separator())
-        appMenu.addItem(
+        menu.addItem(NSMenuItem.separator())
+        menu.addItem(
             withTitle: "Quit Wealthsimple Prospector",
             action: #selector(quitApp(_:)),
-            keyEquivalent: "q"
+            keyEquivalent: includeKeyEquivalents ? "q" : ""
         )
-
-        appMenu.items.forEach { $0.target = self }
-        appMenuItem.submenu = appMenu
-        NSApp.mainMenu = mainMenu
+        menu.items.forEach { $0.target = self }
+        return menu
     }
 
     private func setupUpdater() {
