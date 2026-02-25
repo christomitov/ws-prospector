@@ -49,7 +49,14 @@ def parse_search_results(page: object, search_query: str = "") -> list[Lead]:
 
     cards = _find_result_cards(page)
     if not cards:
-        logger.warning("No result cards found on search page")
+        profile_links = page.css("a[href*='/in/']") or []
+        if profile_links:
+            logger.warning(
+                "No result cards found on search page (%d profile links present).",
+                len(profile_links),
+            )
+        else:
+            logger.info("No result cards found on search page (0 profile links; likely end of results).")
         return leads
 
     logger.info("Found %d result cards", len(cards))
@@ -82,10 +89,13 @@ def _find_result_cards(page: object) -> list:
         logger.debug("Strategy '%s' matched 0", name)
 
     all_links = page.css("a[href*='/in/']")
-    logger.warning(
-        "No card strategy matched. Page has %d profile links total.",
-        len(all_links) if all_links else 0,
-    )
+    if all_links:
+        logger.warning(
+            "No card strategy matched. Page has %d profile links total.",
+            len(all_links),
+        )
+    else:
+        logger.info("No card strategy matched. Page has 0 profile links total (likely end of results).")
     return []
 
 

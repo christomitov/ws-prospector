@@ -23,6 +23,7 @@ import type {
 
 const ROOT_ID = "dc-root";
 const LAUNCHER_ID = "dc-profile-launcher";
+const MAX_GENERATED_MESSAGE_CHARS = 750;
 
 let latestProfileUrl = "";
 let regenerateSeed = 1;
@@ -420,7 +421,7 @@ const buildUi = async (): Promise<UiRefs> => {
           <button id="dc-regenerate" class="dc-button secondary">Regenerate</button>
           <button id="dc-edit-prompt" class="dc-button secondary">Edit Prompt</button>
         </div>
-        <label class="dc-field"><span>Generated message (<=600)</span><textarea id="dc-output" class="dc-textarea"></textarea></label>
+        <label class="dc-field"><span>Generated message (<=${MAX_GENERATED_MESSAGE_CHARS})</span><textarea id="dc-output" class="dc-textarea"></textarea></label>
         <div class="dc-actions"><button id="dc-copy-output" class="dc-button secondary">Copy Message</button></div>
       </section>
     </div>
@@ -759,7 +760,7 @@ const hydrateAndBind = async (): Promise<void> => {
       return;
     }
 
-    const trimmedMessage = response.draft.message.trim().slice(0, 600);
+    const trimmedMessage = response.draft.message.trim().slice(0, MAX_GENERATED_MESSAGE_CHARS);
     const messages: GeneratedMessages = {
       connectionNote: trimmedMessage,
       dm1: trimmedMessage,
@@ -838,15 +839,28 @@ const hydrateAndBind = async (): Promise<void> => {
 const watchProfileNavigation = (): void => {
   const readCurrent = (): string => normalizeProfileUrl(window.location.href);
   latestProfileUrl = readCurrent();
-
-  window.setInterval(() => {
+  const onLocationChange = (): void => {
     const current = readCurrent();
     if (current === latestProfileUrl) {
       return;
     }
     latestProfileUrl = current;
     void hydrateAndBind();
-  }, 1000);
+  };
+
+  const patchHistory = (method: "pushState" | "replaceState"): void => {
+    const original = history[method].bind(history);
+    history[method] = ((...args: unknown[]) => {
+      const result = original(...(args as [data: unknown, unused: string, url?: string | URL | null]));
+      window.dispatchEvent(new Event("wsp:locationchange"));
+      return result;
+    }) as History["pushState"];
+  };
+
+  patchHistory("pushState");
+  patchHistory("replaceState");
+  window.addEventListener("popstate", onLocationChange);
+  window.addEventListener("wsp:locationchange", onLocationChange);
 };
 
 void hydrateAndBind();

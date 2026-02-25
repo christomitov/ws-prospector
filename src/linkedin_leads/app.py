@@ -13,7 +13,7 @@ from logging.handlers import TimedRotatingFileHandler
 from pathlib import Path
 
 import uvicorn
-from fastapi import FastAPI, Query, Request
+from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.responses import FileResponse, HTMLResponse, PlainTextResponse, Response
 from sse_starlette.sse import EventSourceResponse
 
@@ -26,6 +26,7 @@ from .spiders.sales_nav import SalesNavigatorSpider
 from .spiders.search import LinkedInSearchSpider
 from .spiders.url_scraper import UrlSpider
 from .storage import LeadStore
+from .run_labels import summarize_request, summarize_url
 
 logger = logging.getLogger(__name__)
 
@@ -169,7 +170,14 @@ async def _run_spider(source: str, req: SearchRequest) -> dict:
     run_id = store.create_scrape_run(
         run_type="api_search",
         source=source,
-        query_text=req.keywords or req.company or "",
+        query_text=summarize_request(
+            source=source,
+            keywords=req.keywords,
+            title=req.title,
+            location=req.location,
+            industry=req.industry,
+            company=req.company,
+        ),
         max_pages=req.max_pages,
         params=req.model_dump(mode="json"),
     )
@@ -218,6 +226,7 @@ async def scrape_url(body: dict):
     run_id = store.create_scrape_run(
         run_type="api_scrape_url",
         source=source,
+        query_text=summarize_url(url, source=source),
         input_url=url,
         max_pages=max_pages,
         params={"url": url, "max_pages": max_pages},
@@ -348,6 +357,33 @@ async def list_runs(
     runs = store.list_scrape_runs(status=status, run_type=run_type, limit=limit, offset=offset)
     total = store.count_scrape_runs(status=status, run_type=run_type)
     return {"runs": runs, "total": total, "limit": limit, "offset": offset}
+
+
+@app.get("/api/runs/{run_id}/output")
+async def get_run_output(
+    run_id: int,
+    kind: str = Query(default="csv", pattern="^(csv|json)$"),
+):
+    store = _get_store()
+    run = store.get_scrape_run(run_id)
+    if not run:
+        raise HTTPException(status_code=404, detail="Run not found")
+
+    path_value = run.get("csv_output_path") if kind == "csv" else run.get("json_output_path")
+    if not path_value:
+        raise HTTPException(status_code=404, detail=f"No {kind.upper()} output for this run")
+
+    path = Path(path_value)
+    if not path.exists() or not path.is_file():
+        raise HTTPException(status_code=404, detail="Output file not found on disk")
+
+    media_type = "text/csv" if kind == "csv" else "application/json"
+    return FileResponse(
+        path,
+        media_type=media_type,
+        filename=path.name,
+        content_disposition_type="inline",
+    )
 
 
 # ── Connect Queue ─────────────────────────────────────────────────────────

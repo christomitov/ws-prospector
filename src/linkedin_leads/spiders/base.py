@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
 import time
 from abc import ABC, abstractmethod
 from pathlib import Path
@@ -137,6 +138,8 @@ class LinkedInSpider(ABC):
 
     def _save_debug_html(self, response: object, page_num: int) -> None:
         """Save raw HTML to disk for debugging selectors."""
+        if os.getenv("WS_PROSPECTOR_SAVE_DEBUG_HTML", "1").strip().lower() in {"0", "false", "no"}:
+            return
         try:
             DEBUG_HTML_DIR.mkdir(parents=True, exist_ok=True)
             html = ""

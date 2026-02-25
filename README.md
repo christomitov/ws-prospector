@@ -37,7 +37,7 @@ Run from repo root with `uv run` (no global PATH dependency):
 
 ```bash
 uv run ws-prospector-debug status
-uv run ws-prospector-debug collect --query "founder" --source sales_navigator --max-pages 3
+uv run ws-prospector-debug collect --query "founder toronto" --source linkedin_search --max-pages 3
 uv run ws-prospector-debug collect --sales-url "https://www.linkedin.com/sales/search/people?..." --json-out out/leads.json --csv-out out/leads.csv
 ```
 
@@ -45,6 +45,11 @@ uv run ws-prospector-debug collect --sales-url "https://www.linkedin.com/sales/s
 
 1. Structured JSON for downstream LLM evaluation.
 2. Flattened CSV for Sheets/manual sharing.
+
+Sales Navigator note:
+
+1. For reliable Sales Nav targeting, use `--sales-url` from actual Sales Nav UI filters.
+2. Use `--query` mode primarily with `--source linkedin_search`.
 
 ## Run The Extension
 

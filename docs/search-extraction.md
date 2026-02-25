@@ -72,6 +72,12 @@ Behavior:
 
 1. Supports query mode (`--query`) and URL mode (`--sales-url` or `--url`).
 2. Reuses existing search spiders, then optionally visits each profile URL.
-3. Enrichment extracts summary/about, experience, education, and recent posts.
-4. Outputs structured JSON plus flattened CSV for spreadsheet sharing.
-5. Each collect run is recorded in SQLite `scrape_runs` with status/counts/output paths.
+3. Caller-controlled person mode: `--person-query` selects and enriches only the best-matching single profile from query results.
+4. Enrichment extracts summary/about plus top-level profile sections when available: experience, education, certifications, volunteering, skills, honors, languages, featured posts, and activity posts.
+5. For deeper collection (non-`--fast`), experience/education detail pages and recent activity page are fetched as an additional pass.
+6. For Sales Navigator leads, enrichment first tries direct profile resolution from the Sales lead URL and then falls back to a logged-in LinkedIn people search using lead name/company/location to recover a real `/in/` profile URL.
+7. CSV output uses `linkedin_url` as the best usable URL (resolved profile URL when available), with the original extracted URL preserved as `source_url`.
+8. Outputs: `--stdout json|csv|ndjson` for agent workflows; JSON/CSV files remain available via `--json-out/--csv-out`.
+9. `--stdout ndjson` emits one JSON record per line as each lead is processed (low-latency streaming for agents).
+10. Each collect run is recorded in SQLite `scrape_runs` with status/counts/output paths.
+11. Sales Navigator collect workflows should use `--sales-url` from UI-built filters; `--query --source sales_navigator` is intentionally rejected to avoid low-signal/empty result runs.

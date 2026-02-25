@@ -116,6 +116,11 @@
   resize: vertical;
 }
 
+#dc-output {
+  min-height: 92px;
+  line-height: 1.35;
+}
+
 .dc-ai-text {
   font-size: 11px;
   line-height: 1.35;

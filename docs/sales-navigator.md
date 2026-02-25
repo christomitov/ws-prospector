@@ -7,6 +7,8 @@ See also: [Search Extraction](./search-extraction.md), [API Reference](./API.md)
 1. Form-driven Sales Nav extraction via `POST /api/search-navigator`
 2. Pasted Sales Nav URL extraction via `POST /api/scrape-url`
 3. CLI-driven Sales Nav collection via `ws-prospector-debug collect --sales-url ...`
+4. CLI collection rejects `--query --source sales_navigator`; pass an actual Sales Nav URL instead.
+5. Caller-controlled person lookups (query mode) use `--person-query` to force single-profile enrichment when appropriate.
 
 ## Core Implementation
 
@@ -41,4 +43,7 @@ See also: [Search Extraction](./search-extraction.md), [API Reference](./API.md)
 1. Selector reliability depends on Sales Nav DOM changes.
 2. Rate limiting and anti-automation responses can stop pagination early.
 3. Sales Nav uses JS-rendered content; if your environment cannot open a headed browser window when fallback is required, extraction may return zero rows.
-4. Some Sales lead URLs do not directly expose `/in/` profile URLs; CLI enrichment resolves profile URLs best-effort and may leave unresolved leads when profile links are not present in fetched HTML.
+4. Some Sales lead URLs do not directly expose `/in/` profile URLs; CLI enrichment now falls back to a LinkedIn people search using lead identity fields to resolve profile URLs when direct extraction fails.
+5. Experience/Education details may be lazy-rendered; parser now runs a second-pass extraction against profile sections and hydration payloads to improve coverage, but exact counts remain best-effort.
+6. Resolution remains best-effort: ambiguous names or sparse lead metadata can still produce unresolved profiles.
+7. For agent workflows, prefer `--stdout json` or `--stdout ndjson` to avoid file churn and consume records directly from stdout.

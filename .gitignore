@@ -27,6 +27,7 @@ build/
 .build/
 .release-feed/
 dist/
+out/
 *.egg-info/
 .eggs/
 *.spec
@@ -38,6 +39,7 @@ dist/
 # Misc logs/temp
 *.log
 *.tmp
+tmp/
 
 # JS/TS workspace deps
 node_modules/

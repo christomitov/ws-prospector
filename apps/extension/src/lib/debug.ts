@@ -14,6 +14,14 @@ interface DebugWindow extends Window {
 
 const localLogBuffer: DebugEntry[] = [];
 
+const shouldLogToConsole = (): boolean => {
+  if (typeof window === "undefined") {
+    return false;
+  }
+  const flag = (window as Window & { __WSP_VERBOSE__?: boolean }).__WSP_VERBOSE__;
+  return import.meta.env.DEV || flag === true;
+};
+
 const pushLocalLog = (entry: DebugEntry): void => {
   localLogBuffer.unshift(entry);
   if (localLogBuffer.length > LOCAL_BUFFER_LIMIT) {
@@ -39,8 +47,9 @@ export const debugLog = (scope: string, event: string, details?: unknown): void 
     ...(details ? { details } : {}),
   };
 
-  // Keep logs visible in DevTools and in extension-local buffers.
-  console.info(`[WSP][${scope}] ${event}`, details ?? "");
+  if (shouldLogToConsole()) {
+    console.info(`[WSP][${scope}] ${event}`, details ?? "");
+  }
   pushLocalLog(entry);
   sendToBackground(entry);
 };

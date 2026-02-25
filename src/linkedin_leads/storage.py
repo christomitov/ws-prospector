@@ -522,6 +522,13 @@ class LeadStore:
             rows = conn.execute(sql, tuple(params)).fetchall()
         return [dict(r) for r in rows]
 
+    def get_scrape_run(self, run_id: int) -> dict | None:
+        if run_id <= 0:
+            return None
+        with self._connect() as conn:
+            row = conn.execute("SELECT * FROM scrape_runs WHERE id = ?", (run_id,)).fetchone()
+        return dict(row) if row else None
+
     def count_scrape_runs(self, *, status: str | None = None, run_type: str | None = None) -> int:
         clauses: list[str] = []
         params: list[object] = []
