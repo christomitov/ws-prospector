@@ -1,0 +1,794 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Wealthsimple Prospector</title>
+  <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
+  <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
+  <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.7.2/css/all.min.css" rel="stylesheet">
+  <style>
+    [x-cloak] { display: none !important; }
+    .fade-in { animation: fadeIn 0.3s ease-in; }
+    @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+  </style>
+</head>
+<body class="bg-gray-50 min-h-screen" x-data="app()" x-init="init()">
+  <!-- Header -->
+  <header class="bg-white shadow-sm border-b border-gray-200">
+    <div class="max-w-7xl mx-auto px-4 py-4 flex items-center justify-between">
+      <h1 class="text-xl font-bold text-gray-900">Wealthsimple Prospector</h1>
+      <div class="flex items-center gap-4">
+        <div class="flex items-center gap-2">
+          <span class="inline-block w-2.5 h-2.5 rounded-full"
+                :class="session === 'connected' ? 'bg-green-500' : session === 'expired' ? 'bg-red-500' : 'bg-gray-400'"></span>
+          <span class="text-sm text-gray-600" x-text="session === 'connected' ? 'Connected' : session === 'expired' ? 'Session Expired' : 'Checking...'"></span>
+        </div>
+        <a href="#settings"
+           class="inline-flex items-center justify-center w-9 h-9 rounded-md border border-gray-300 text-gray-500 hover:text-gray-800 hover:border-gray-400 transition"
+           title="Settings"
+           aria-label="Settings">
+          <i class="fa-solid fa-gear text-sm"></i>
+        </a>
+        <button x-show="session !== 'connected'" @click="login()" class="px-3 py-1.5 text-sm bg-blue-600 text-white rounded hover:bg-blue-700 transition"
+                :disabled="loggingIn">
+          <span x-show="!loggingIn">Connect LinkedIn</span>
+          <span x-show="loggingIn">Opening browser...</span>
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <main class="max-w-7xl mx-auto px-4 py-6">
+    <!-- Tabs -->
+    <div class="mb-4 border-b border-gray-200">
+      <nav class="flex gap-6">
+        <a href="#search/fields" class="pb-2 text-sm font-medium border-b-2 transition cursor-pointer"
+           :class="tab === 'search' ? 'border-blue-600 text-blue-600' : 'border-transparent text-gray-500 hover:text-gray-700'">
+          Search
+        </a>
+        <a href="#results" class="pb-2 text-sm font-medium border-b-2 transition cursor-pointer"
+           :class="tab === 'results' ? 'border-blue-600 text-blue-600' : 'border-transparent text-gray-500 hover:text-gray-700'">
+          Results
+        </a>
+        <a href="#connect" class="pb-2 text-sm font-medium border-b-2 transition cursor-pointer"
+           :class="tab === 'connect' ? 'border-blue-600 text-blue-600' : 'border-transparent text-gray-500 hover:text-gray-700'">
+          Connect
+        </a>
+      </nav>
+    </div>
+
+    <!-- Search Tab -->
+    <div x-show="tab === 'search'" x-cloak class="fade-in">
+      <!-- Mode toggle -->
+      <div class="flex gap-2 mb-4">
+        <a href="#search/fields" class="px-3 py-1.5 text-sm rounded-md border transition cursor-pointer"
+           :class="searchMode === 'form' ? 'bg-blue-600 text-white border-blue-600' : 'bg-white text-gray-600 border-gray-300 hover:bg-gray-50'">
+          Search Fields
+        </a>
+        <a href="#search/url" class="px-3 py-1.5 text-sm rounded-md border transition cursor-pointer"
+           :class="searchMode === 'url' ? 'bg-blue-600 text-white border-blue-600' : 'bg-white text-gray-600 border-gray-300 hover:bg-gray-50'">
+          Paste Sales Nav URL
+        </a>
+      </div>
+
+      <!-- URL Mode -->
+      <div x-show="searchMode === 'url'" class="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
+        <label class="block text-sm font-medium text-gray-700 mb-1">Sales Navigator Search URL</label>
+        <input type="text" x-model="urlInput" placeholder="https://www.linkedin.com/sales/search/people?query=..."
+               class="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:ring-blue-500 focus:border-blue-500 mb-3">
+        <p class="text-xs text-gray-400 mb-4">Paste a Sales Navigator people search URL and the app will scrape pages of results.</p>
+        <div class="flex items-center gap-4 mb-4">
+          <div>
+            <label class="block text-sm font-medium text-gray-700 mb-1">Max Pages</label>
+            <input type="number" x-model.number="form.max_pages" min="1" max="100"
+                   class="w-24 px-3 py-2 border border-gray-300 rounded-md text-sm focus:ring-blue-500 focus:border-blue-500">
+          </div>
+        </div>
+        <button @click="startUrlScrape()" class="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition text-sm font-medium"
+                :disabled="searching || !urlInput.trim()">
+          <span x-show="!searching">Scrape URL</span>
+          <span x-show="searching">Scraping...</span>
+        </button>
+      </div>
+
+      <!-- Form Mode -->
+      <div x-show="searchMode === 'form'" class="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+          <div>
+            <label class="block text-sm font-medium text-gray-700 mb-1">Keywords</label>
+            <input type="text" x-model="form.keywords" placeholder="e.g. software engineer"
+                   class="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:ring-blue-500 focus:border-blue-500">
+          </div>
+          <div>
+            <label class="block text-sm font-medium text-gray-700 mb-1">Job Title</label>
+            <input type="text" x-model="form.title" placeholder="e.g. CTO"
+                   class="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:ring-blue-500 focus:border-blue-500">
+          </div>
+          <div>
+            <label class="block text-sm font-medium text-gray-700 mb-1">Location</label>
+            <input type="text" x-model="form.location" placeholder="e.g. San Francisco"
+                   class="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:ring-blue-500 focus:border-blue-500">
+          </div>
+          <div>
+            <label class="block text-sm font-medium text-gray-700 mb-1">Industry</label>
+            <input type="text" x-model="form.industry" placeholder="e.g. Technology"
+                   class="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:ring-blue-500 focus:border-blue-500">
+          </div>
+          <div>
+            <label class="block text-sm font-medium text-gray-700 mb-1">Company</label>
+            <input type="text" x-model="form.company" placeholder="e.g. google"
+                   class="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:ring-blue-500 focus:border-blue-500">
+          </div>
+          <div>
+            <label class="block text-sm font-medium text-gray-700 mb-1">Max Pages</label>
+            <input type="number" x-model.number="form.max_pages" min="1" max="100"
+                   class="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:ring-blue-500 focus:border-blue-500">
+          </div>
+        </div>
+
+        <button @click="startSearch()" class="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition text-sm font-medium"
+                :disabled="searching">
+          <span x-show="!searching">Find Leads</span>
+          <span x-show="searching">Searching...</span>
+        </button>
+      </div>
+
+      <!-- Progress -->
+      <div x-show="searching || progress.done" class="mt-4 bg-white rounded-lg shadow-sm border border-gray-200 p-4 fade-in">
+        <div class="flex items-center justify-between mb-2">
+          <span class="text-sm text-gray-600">
+            <span x-show="!progress.done">Scraping page <span x-text="progress.page"></span>...</span>
+            <span x-show="progress.done && !progress.error" class="text-green-600">Search complete!</span>
+            <span x-show="progress.error" class="text-red-600">Error: <span x-text="progress.error"></span></span>
+          </span>
+          <span class="text-sm font-medium text-gray-900">Found <span x-text="progress.found || 0"></span> leads</span>
+        </div>
+        <div class="w-full bg-gray-200 rounded-full h-2">
+          <div class="bg-blue-600 h-2 rounded-full transition-all duration-300"
+               :style="`width: ${progress.page && form.max_pages ? Math.min(100, (progress.page / form.max_pages) * 100) : 0}%`"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Results Tab -->
+    <div x-show="tab === 'results'" x-cloak class="fade-in">
+      <div class="bg-white rounded-lg shadow-sm border border-gray-200">
+        <!-- Filters -->
+        <div class="p-4 border-b border-gray-200 flex flex-wrap items-center gap-3">
+          <input type="text" x-model="filter.search" @input.debounce.300ms="loadLeads()" placeholder="Search leads..."
+                 class="px-3 py-1.5 border border-gray-300 rounded-md text-sm focus:ring-blue-500 focus:border-blue-500">
+          <select x-model="filter.source" @change="loadLeads()"
+                  class="px-3 py-1.5 border border-gray-300 rounded-md text-sm focus:ring-blue-500 focus:border-blue-500">
+            <option value="">All Sources</option>
+            <option value="linkedin_search">LinkedIn Search</option>
+            <option value="sales_navigator">Sales Navigator</option>
+            <option value="company_employees">Company Employees</option>
+          </select>
+          <input type="text" x-model="filter.company" @input.debounce.300ms="loadLeads()" placeholder="Filter by company..."
+                 class="px-3 py-1.5 border border-gray-300 rounded-md text-sm focus:ring-blue-500 focus:border-blue-500">
+          <div class="ml-auto flex gap-2">
+            <button @click="queueSelected()" x-show="selectedLeads.length > 0"
+                    class="px-3 py-1.5 text-sm bg-green-600 text-white rounded-md hover:bg-green-700 transition">
+              Queue <span x-text="selectedLeads.length"></span> to Connect
+            </button>
+            <button @click="clearLeads()"
+                    class="px-3 py-1.5 text-sm border border-red-300 text-red-600 rounded-md hover:bg-red-50 transition">
+              Clear Leads
+            </button>
+            <button @click="exportLeads('csv')" class="px-3 py-1.5 text-sm border border-gray-300 rounded-md hover:bg-gray-50 transition">
+              Export CSV
+            </button>
+            <button @click="exportLeads('json')" class="px-3 py-1.5 text-sm border border-gray-300 rounded-md hover:bg-gray-50 transition">
+              Export JSON
+            </button>
+          </div>
+        </div>
+
+        <!-- Table -->
+        <div class="overflow-x-auto">
+          <table class="w-full text-sm">
+            <thead class="bg-gray-50 text-gray-500 uppercase text-xs">
+              <tr>
+                <th class="px-4 py-3 w-8">
+                  <input type="checkbox" @change="toggleSelectAll($event)" class="rounded">
+                </th>
+                <th class="px-4 py-3 text-left cursor-pointer" @click="toggleSort('full_name')">Name</th>
+                <th class="px-4 py-3 text-left cursor-pointer" @click="toggleSort('current_title')">Title</th>
+                <th class="px-4 py-3 text-left cursor-pointer" @click="toggleSort('current_company')">Company</th>
+                <th class="px-4 py-3 text-left">Location</th>
+                <th class="px-4 py-3 text-left">Degree</th>
+                <th class="px-4 py-3 text-left">Source</th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-gray-100">
+              <template x-for="lead in sortedLeads" :key="lead.id">
+                <tr class="hover:bg-gray-50">
+                  <td class="px-4 py-3">
+                    <input type="checkbox" :value="lead.id" x-model="selectedLeads" class="rounded">
+                  </td>
+                  <td class="px-4 py-3">
+                    <template x-if="lead.linkedin_url">
+                      <a :href="lead.linkedin_url" target="_blank" class="text-blue-600 hover:underline" x-text="lead.full_name"></a>
+                    </template>
+                    <template x-if="!lead.linkedin_url">
+                      <span x-text="lead.full_name"></span>
+                    </template>
+                  </td>
+                  <td class="px-4 py-3 text-gray-600" x-text="lead.current_title || '-'"></td>
+                  <td class="px-4 py-3 text-gray-600" x-text="lead.current_company || '-'"></td>
+                  <td class="px-4 py-3 text-gray-500" x-text="lead.location || '-'"></td>
+                  <td class="px-4 py-3 text-gray-500" x-text="lead.connection_degree || '-'"></td>
+                  <td class="px-4 py-3 text-gray-500" x-text="formatSource(lead.source)"></td>
+                </tr>
+              </template>
+              <tr x-show="leads.length === 0">
+                <td colspan="7" class="px-4 py-8 text-center text-gray-400">No leads found. Run a search to get started.</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <!-- Pagination -->
+        <div class="p-4 border-t border-gray-200 flex items-center justify-between text-sm text-gray-500">
+          <span>Showing <span x-text="leads.length"></span> of <span x-text="leadsTotal"></span> leads</span>
+          <div class="flex gap-2">
+            <button @click="prevPage()" :disabled="filter.offset === 0"
+                    class="px-3 py-1 border border-gray-300 rounded hover:bg-gray-50 disabled:opacity-50">Prev</button>
+            <button @click="nextPage()" :disabled="filter.offset + filter.limit >= leadsTotal"
+                    class="px-3 py-1 border border-gray-300 rounded hover:bg-gray-50 disabled:opacity-50">Next</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Connect Tab -->
+    <div x-show="tab === 'connect'" x-cloak class="fade-in">
+      <!-- Worker Controls -->
+      <div class="bg-white rounded-lg shadow-sm border border-gray-200 p-6 mb-4">
+        <div class="flex items-center justify-between mb-4">
+          <div>
+            <h3 class="text-lg font-medium text-gray-900">Connect Request Queue</h3>
+            <p class="text-sm text-gray-500"
+               x-text="connectStatus.business_hours_only
+                 ? `Sends requests during ${connectStatus.business_start || '09:00'}-${connectStatus.business_end || '17:00'} with random jitter. Daily limit is configurable.`
+                 : 'Sends requests any time with random jitter. Daily limit is configurable.'"></p>
+          </div>
+          <div class="flex items-center gap-2">
+            <span class="inline-block w-2.5 h-2.5 rounded-full"
+                  :class="connectStatus.running && !connectStatus.paused ? 'bg-green-500' : connectStatus.paused ? 'bg-yellow-500' : 'bg-gray-400'"></span>
+            <span class="text-sm text-gray-600"
+                  x-text="connectStatus.running && !connectStatus.paused ? 'Running' : connectStatus.paused ? 'Paused' : 'Stopped'"></span>
+          </div>
+        </div>
+        <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-4">
+          <div class="text-center p-3 bg-gray-50 rounded">
+            <div class="text-2xl font-bold text-gray-900" x-text="connectStatus.pending || 0"></div>
+            <div class="text-xs text-gray-500">Pending</div>
+          </div>
+          <div class="text-center p-3 bg-gray-50 rounded">
+            <div class="text-2xl font-bold text-green-600" x-text="connectStatus.sent || 0"></div>
+            <div class="text-xs text-gray-500">Sent</div>
+          </div>
+          <div class="text-center p-3 bg-gray-50 rounded">
+            <div class="text-2xl font-bold text-red-600" x-text="connectStatus.failed || 0"></div>
+            <div class="text-xs text-gray-500">Failed</div>
+          </div>
+          <div class="text-center p-3 bg-gray-50 rounded">
+            <div class="text-2xl font-bold text-blue-600" x-text="(connectStatus.sends_today || 0) + '/' + (connectStatus.daily_limit || 10)"></div>
+            <div class="text-xs text-gray-500">Sent Today</div>
+          </div>
+        </div>
+        <div class="flex gap-2">
+          <button x-show="!connectStatus.running" @click="startConnectWorker()"
+                  class="px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 text-sm">Start</button>
+          <button x-show="connectStatus.running && !connectStatus.paused" @click="pauseConnectWorker()"
+                  class="px-4 py-2 bg-yellow-600 text-white rounded-md hover:bg-yellow-700 text-sm">Pause</button>
+          <button x-show="connectStatus.paused" @click="resumeConnectWorker()"
+                  class="px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 text-sm">Resume</button>
+          <button x-show="connectStatus.running" @click="stopConnectWorker()"
+                  class="px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700 text-sm">Stop</button>
+        </div>
+        <template x-if="connectStatus.last_sent">
+          <p class="mt-2 text-xs text-gray-400">Last sent: <span x-text="connectStatus.last_sent"></span></p>
+        </template>
+      </div>
+
+      <!-- Queue List -->
+      <div class="bg-white rounded-lg shadow-sm border border-gray-200">
+        <div class="p-4 border-b border-gray-200 flex items-center gap-3">
+          <select x-model="connectFilter" @change="loadConnectQueue()"
+                  class="px-3 py-1.5 border border-gray-300 rounded-md text-sm">
+            <option value="">All</option>
+            <option value="pending">Pending</option>
+            <option value="sent">Sent</option>
+            <option value="failed">Failed</option>
+          </select>
+        </div>
+        <div class="overflow-x-auto">
+          <table class="w-full text-sm">
+            <thead class="bg-gray-50 text-gray-500 uppercase text-xs">
+              <tr>
+                <th class="px-4 py-3 text-left">Name</th>
+                <th class="px-4 py-3 text-left">Status</th>
+                <th class="px-4 py-3 text-left">Sent At</th>
+                <th class="px-4 py-3 text-left">Action</th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-gray-100">
+              <template x-for="item in connectQueue" :key="item.id">
+                <tr class="hover:bg-gray-50">
+                  <td class="px-4 py-3">
+                    <a :href="item.linkedin_url" target="_blank" class="text-blue-600 hover:underline" x-text="item.full_name"></a>
+                  </td>
+                  <td class="px-4 py-3">
+                    <span class="inline-block px-2 py-0.5 text-xs rounded-full"
+                          :class="{
+                            'bg-gray-100 text-gray-600': item.status === 'pending',
+                            'bg-green-100 text-green-700': item.status === 'sent',
+                            'bg-red-100 text-red-700': item.status === 'failed'
+                          }"
+                          x-text="formatStatus(item.status)"></span>
+                  </td>
+                  <td class="px-4 py-3 text-gray-500 text-xs" x-text="formatDateTime(item.sent_at)"></td>
+                  <td class="px-4 py-3">
+                    <button x-show="item.status === 'failed'" @click="retryFailed(item)"
+                            class="px-2 py-1 text-xs bg-blue-600 text-white rounded hover:bg-blue-700 transition">
+                      Retry
+                    </button>
+                    <span x-show="item.status !== 'failed'" class="text-xs text-gray-400">-</span>
+                  </td>
+                </tr>
+              </template>
+              <tr x-show="connectQueue.length === 0">
+                <td colspan="4" class="px-4 py-8 text-center text-gray-400">Queue is empty. Select leads from Results and click "Queue to Connect".</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- Settings Tab -->
+    <div x-show="tab === 'settings'" x-cloak class="fade-in">
+      <div class="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
+        <h3 class="text-lg font-medium text-gray-900 mb-1">Settings</h3>
+        <p class="text-sm text-gray-500 mb-6">Configure connector pacing and LinkedIn session controls.</p>
+
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
+          <div>
+            <label class="block text-sm font-medium text-gray-700 mb-1">Daily Limit</label>
+            <input type="number" min="1" max="100" x-model.number="connectSettings.daily_limit"
+                   class="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:ring-blue-500 focus:border-blue-500">
+          </div>
+          <div>
+            <label class="block text-sm font-medium text-gray-700 mb-1">Min Delay (seconds)</label>
+            <input type="number" min="5" x-model.number="connectSettings.min_delay_seconds"
+                   class="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:ring-blue-500 focus:border-blue-500">
+          </div>
+          <div>
+            <label class="block text-sm font-medium text-gray-700 mb-1">Max Delay (seconds)</label>
+            <input type="number" min="5" x-model.number="connectSettings.max_delay_seconds"
+                   class="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:ring-blue-500 focus:border-blue-500">
+          </div>
+          <div class="flex items-end">
+            <label class="inline-flex items-center gap-2 text-sm text-gray-700">
+              <input type="checkbox" x-model="connectSettings.business_hours_only" class="rounded border-gray-300 text-blue-600 focus:ring-blue-500">
+              Restrict to business hours
+            </label>
+          </div>
+          <div>
+            <label class="block text-sm font-medium text-gray-700 mb-1">Business Start Hour</label>
+            <input type="number" min="0" max="23" x-model.number="connectSettings.biz_start_hour"
+                   :disabled="!connectSettings.business_hours_only"
+                   class="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:ring-blue-500 focus:border-blue-500 disabled:bg-gray-100">
+          </div>
+          <div>
+            <label class="block text-sm font-medium text-gray-700 mb-1">Business End Hour</label>
+            <input type="number" min="0" max="23" x-model.number="connectSettings.biz_end_hour"
+                   :disabled="!connectSettings.business_hours_only"
+                   class="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:ring-blue-500 focus:border-blue-500 disabled:bg-gray-100">
+          </div>
+        </div>
+
+        <div class="flex flex-wrap gap-2">
+          <button @click="saveConnectSettings()" :disabled="settingsSaving"
+                  class="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 text-sm disabled:opacity-60">
+            <span x-show="!settingsSaving">Save Connector Settings</span>
+            <span x-show="settingsSaving">Saving...</span>
+          </button>
+          <button @click="logout()" class="px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700 text-sm">
+            Logout LinkedIn Session
+          </button>
+        </div>
+      </div>
+    </div>
+  </main>
+
+  <script>
+    function app() {
+      return {
+        tab: 'search',
+        searchMode: 'form',
+        session: 'unknown',
+        loggingIn: false,
+        searching: false,
+        settingsSaving: false,
+        stats: {},
+        urlInput: '',
+        form: {
+          keywords: '',
+          title: '',
+          location: '',
+          industry: '',
+          company: '',
+          max_pages: 5,
+        },
+        progress: { found: 0, page: 0, done: false, error: null },
+        leads: [],
+        leadsTotal: 0,
+        selectedLeads: [],
+        filter: { search: '', source: '', company: '', limit: 100, offset: 0 },
+        sortField: 'full_name',
+        sortAsc: true,
+        connectStatus: {},
+        connectQueue: [],
+        connectFilter: '',
+        connectSettings: {
+          daily_limit: 10,
+          min_delay_seconds: 90,
+          max_delay_seconds: 300,
+          business_hours_only: false,
+          biz_start_hour: 9,
+          biz_end_hour: 17,
+        },
+
+        async init() {
+          window.addEventListener('hashchange', () => this.applyRoute());
+          this.applyRoute();
+          await this.checkSession();
+          await this.loadStats();
+          await this.loadConnectSettings();
+        },
+
+        applyRoute() {
+          const hash = (window.location.hash || '#search/fields').replace('#', '');
+          const [tabPart, modePart] = hash.split('/');
+          const validTabs = ['search', 'results', 'connect', 'settings'];
+          this.tab = validTabs.includes(tabPart) ? tabPart : 'search';
+
+          if (this.tab === 'search') {
+            this.searchMode = modePart === 'url' ? 'url' : 'form';
+          }
+          if (this.tab === 'results') {
+            this.loadLeads();
+          }
+          if (this.tab === 'connect') {
+            this.loadConnectStatus();
+          }
+          if (this.tab === 'settings') {
+            this.loadConnectSettings();
+          }
+        },
+
+        _pickConnectSettings(data) {
+          return {
+            daily_limit: data.daily_limit ?? this.connectSettings.daily_limit,
+            min_delay_seconds: data.min_delay_seconds ?? this.connectSettings.min_delay_seconds,
+            max_delay_seconds: data.max_delay_seconds ?? this.connectSettings.max_delay_seconds,
+            business_hours_only: data.business_hours_only ?? this.connectSettings.business_hours_only,
+            biz_start_hour: data.biz_start_hour ?? this.connectSettings.biz_start_hour,
+            biz_end_hour: data.biz_end_hour ?? this.connectSettings.biz_end_hour,
+          };
+        },
+
+        async checkSession() {
+          try {
+            const res = await fetch('/api/session/status');
+            const data = await res.json();
+            this.session = data.status;
+          } catch {
+            this.session = 'unknown';
+          }
+        },
+
+        async login() {
+          this.loggingIn = true;
+          try {
+            const res = await fetch('/api/session/login', { method: 'POST' });
+            const data = await res.json();
+            this.session = data.status;
+          } catch {
+            this.session = 'unknown';
+          }
+          this.loggingIn = false;
+        },
+
+        async logout() {
+          if (!confirm('Logout and clear saved LinkedIn session cookies?')) return;
+          try {
+            const res = await fetch('/api/session/logout', { method: 'POST' });
+            const data = await res.json();
+            this.session = data.status || 'unknown';
+            alert('LinkedIn session cleared.');
+          } catch {
+            alert('Failed to clear session.');
+          }
+        },
+
+        async loadStats() {
+          try {
+            const res = await fetch('/api/stats');
+            this.stats = await res.json();
+          } catch {}
+        },
+
+        async startSearch() {
+          this.searching = true;
+          this.progress = { found: 0, page: 0, done: false, error: null };
+          try {
+            await fetch('/api/search', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(this.form),
+            });
+            this.listenProgress();
+          } catch (e) {
+            this.progress.error = e.message;
+            this.searching = false;
+          }
+        },
+
+        async startUrlScrape() {
+          this.searching = true;
+          this.progress = { found: 0, page: 0, done: false, error: null };
+          try {
+            await fetch('/api/scrape-url', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ url: this.urlInput.trim(), max_pages: this.form.max_pages }),
+            });
+            this.listenProgress();
+          } catch (e) {
+            this.progress.error = e.message;
+            this.searching = false;
+          }
+        },
+
+        listenProgress() {
+          const es = new EventSource('/api/search/stream');
+          es.addEventListener('progress', (e) => {
+            this.progress = JSON.parse(e.data);
+          });
+          es.addEventListener('done', (e) => {
+            this.progress = JSON.parse(e.data);
+            this.searching = false;
+            this.loadStats();
+            if (this.progress.found > 0) {
+              window.location.hash = '#results';
+            }
+            es.close();
+          });
+          es.onerror = () => {
+            this.searching = false;
+            es.close();
+          };
+        },
+
+        async loadLeads() {
+          const params = new URLSearchParams();
+          if (this.filter.search) params.set('search', this.filter.search);
+          if (this.filter.source) params.set('source', this.filter.source);
+          if (this.filter.company) params.set('company', this.filter.company);
+          params.set('limit', this.filter.limit);
+          params.set('offset', this.filter.offset);
+          try {
+            const res = await fetch(`/api/leads?${params}`);
+            const data = await res.json();
+            this.leads = data.leads;
+            this.leadsTotal = data.total;
+          } catch {}
+        },
+
+        get sortedLeads() {
+          const field = this.sortField;
+          const asc = this.sortAsc;
+          return [...this.leads].sort((a, b) => {
+            const va = (a[field] || '').toString().toLowerCase();
+            const vb = (b[field] || '').toString().toLowerCase();
+            return asc ? va.localeCompare(vb) : vb.localeCompare(va);
+          });
+        },
+
+        toggleSort(field) {
+          if (this.sortField === field) {
+            this.sortAsc = !this.sortAsc;
+          } else {
+            this.sortField = field;
+            this.sortAsc = true;
+          }
+        },
+
+        exportLeads(format) {
+          const params = new URLSearchParams({ format });
+          if (this.filter.source) params.set('source', this.filter.source);
+          window.open(`/api/leads/export?${params}`, '_blank');
+        },
+
+        prevPage() {
+          this.filter.offset = Math.max(0, this.filter.offset - this.filter.limit);
+          this.loadLeads();
+        },
+        nextPage() {
+          this.filter.offset += this.filter.limit;
+          this.loadLeads();
+        },
+
+        toggleSelectAll(e) {
+          if (e.target.checked) {
+            this.selectedLeads = this.sortedLeads.filter((l) => l.linkedin_url).map((l) => l.id);
+          } else {
+            this.selectedLeads = [];
+          }
+        },
+
+        formatStatus(status) {
+          if (!status) return '-';
+          return status.charAt(0).toUpperCase() + status.slice(1);
+        },
+
+        formatSource(source) {
+          if (!source) return '-';
+          const labels = {
+            linkedin_search: 'LinkedIn Search',
+            sales_navigator: 'Sales Navigator',
+            company_employees: 'Company Employees',
+          };
+          return labels[source] || source.replace(/_/g, ' ');
+        },
+
+        formatDateTime(raw) {
+          if (!raw) return '-';
+          const dt = new Date(raw);
+          if (Number.isNaN(dt.getTime())) return '-';
+          return dt.toLocaleString([], {
+            year: 'numeric',
+            month: 'short',
+            day: 'numeric',
+            hour: 'numeric',
+            minute: '2-digit',
+          });
+        },
+
+        async queueSelected() {
+          const note = prompt('Optional connection note (leave blank for no note):');
+          try {
+            const res = await fetch('/api/connect/enqueue', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ lead_ids: this.selectedLeads.map(Number), note: note || null }),
+            });
+            const data = await res.json();
+            alert(`Added ${data.added} leads to connect queue (${data.total_queued} total pending)`);
+            this.selectedLeads = [];
+          } catch {}
+        },
+
+        async clearLeads() {
+          if (!confirm('Clear all leads and connect queue entries?')) return;
+          try {
+            await fetch('/api/leads/clear', { method: 'POST' });
+            this.leads = [];
+            this.leadsTotal = 0;
+            this.selectedLeads = [];
+            await this.loadStats();
+            await this.loadConnectStatus();
+            alert('Leads cleared.');
+          } catch {
+            alert('Failed to clear leads.');
+          }
+        },
+
+        async retryFailed(item) {
+          if (!item || !item.lead_id) return;
+          try {
+            const res = await fetch('/api/connect/retry', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ lead_id: Number(item.lead_id), note: item.note || null }),
+            });
+            const data = await res.json();
+            if (data && data.added > 0) {
+              await this.loadConnectStatus();
+            }
+          } catch {}
+        },
+
+        async loadConnectStatus() {
+          try {
+            const res = await fetch('/api/connect/status');
+            this.connectStatus = await res.json();
+            this.connectSettings = { ...this.connectSettings, ...this._pickConnectSettings(this.connectStatus) };
+          } catch {}
+          this.loadConnectQueue();
+        },
+
+        async loadConnectQueue() {
+          const params = new URLSearchParams();
+          if (this.connectFilter) params.set('status', this.connectFilter);
+          try {
+            const res = await fetch(`/api/connect/queue?${params}`);
+            const data = await res.json();
+            this.connectQueue = data.queue;
+            this.connectStatus = { ...this.connectStatus, ...data.stats };
+          } catch {}
+        },
+
+        async startConnectWorker() {
+          const res = await fetch('/api/connect/start', { method: 'POST' });
+          this.connectStatus = await res.json();
+          this.connectSettings = { ...this.connectSettings, ...this._pickConnectSettings(this.connectStatus) };
+        },
+        async stopConnectWorker() {
+          const res = await fetch('/api/connect/stop', { method: 'POST' });
+          this.connectStatus = await res.json();
+          this.connectSettings = { ...this.connectSettings, ...this._pickConnectSettings(this.connectStatus) };
+        },
+        async pauseConnectWorker() {
+          const res = await fetch('/api/connect/pause', { method: 'POST' });
+          this.connectStatus = await res.json();
+        },
+        async resumeConnectWorker() {
+          const res = await fetch('/api/connect/resume', { method: 'POST' });
+          this.connectStatus = await res.json();
+        },
+
+        async loadConnectSettings() {
+          try {
+            const res = await fetch('/api/settings/connect');
+            const data = await res.json();
+            this.connectSettings = { ...this.connectSettings, ...this._pickConnectSettings(data) };
+            this.connectStatus = { ...this.connectStatus, ...this.connectSettings };
+          } catch {}
+        },
+
+        _normalizedConnectSettingsPayload() {
+          const dailyLimit = Math.max(1, Number(this.connectSettings.daily_limit || 10));
+          const minDelay = Math.max(5, Number(this.connectSettings.min_delay_seconds || 90));
+          const maxDelay = Math.max(minDelay, Number(this.connectSettings.max_delay_seconds || 300));
+          const startHour = Math.min(23, Math.max(0, Number(this.connectSettings.biz_start_hour || 9)));
+          const endHour = Math.min(23, Math.max(0, Number(this.connectSettings.biz_end_hour || 17)));
+          return {
+            daily_limit: dailyLimit,
+            min_delay_seconds: minDelay,
+            max_delay_seconds: maxDelay,
+            business_hours_only: Boolean(this.connectSettings.business_hours_only),
+            biz_start_hour: startHour,
+            biz_end_hour: endHour,
+          };
+        },
+
+        async saveConnectSettings() {
+          this.settingsSaving = true;
+          const payload = this._normalizedConnectSettingsPayload();
+          try {
+            const res = await fetch('/api/settings/connect', {
+              method: 'PUT',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(payload),
+            });
+            const data = await res.json();
+            this.connectSettings = { ...this.connectSettings, ...this._pickConnectSettings(data) };
+            this.connectStatus = { ...this.connectStatus, ...this.connectSettings };
+            alert('Connector settings saved.');
+          } catch {
+            alert('Failed to save connector settings.');
+          } finally {
+            this.settingsSaving = false;
+          }
+        },
+      };
+    }
+  </script>
+</body>
+</html>
