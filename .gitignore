@@ -38,3 +38,7 @@ dist/
 # Misc logs/temp
 *.log
 *.tmp
+
+# JS/TS workspace deps
+node_modules/
+.pnpm-store/

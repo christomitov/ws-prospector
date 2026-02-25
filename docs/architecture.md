@@ -26,6 +26,7 @@ See also: [Data Model And Storage](./data-storage.md), [Auto Connector](./auto-c
 3. Only one search is allowed at a time (`_active_search` guard).
 4. Leads are upserted to SQLite with deduplication.
 5. Auto connector consumes queued leads in a background loop (24/7 by default, optional business-hours gate).
+6. Scrape run metadata is persisted in SQLite (`scrape_runs`) and exposed via `GET /api/runs`.
 
 ## Debug Artifacts
 

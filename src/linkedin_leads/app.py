@@ -166,6 +166,13 @@ async def _run_spider(source: str, req: SearchRequest) -> dict:
     else:
         spider = CompanyEmployeesSpider(mgr.user_data_dir, req, max_pages=req.max_pages)
 
+    run_id = store.create_scrape_run(
+        run_type="api_search",
+        source=source,
+        query_text=req.keywords or req.company or "",
+        max_pages=req.max_pages,
+        params=req.model_dump(mode="json"),
+    )
     _active_search = {"found": 0, "page": 0, "done": False, "error": None}
 
     async def run():
@@ -179,13 +186,15 @@ async def _run_spider(source: str, req: SearchRequest) -> dict:
                 store.upsert_many(leads)
             _active_search["found"] = len(leads)
             _active_search["done"] = True
+            store.update_scrape_run(run_id, status="completed", leads_found=len(leads), leads_enriched=0)
         except Exception as e:
             logger.exception("Spider failed")
             _active_search["error"] = str(e)
             _active_search["done"] = True
+            store.update_scrape_run(run_id, status="failed", error=str(e))
 
     asyncio.create_task(run())
-    return {"status": "started", "source": source}
+    return {"status": "started", "source": source, "run_id": run_id}
 
 
 @app.post("/api/scrape-url")
@@ -206,6 +215,13 @@ async def scrape_url(body: dict):
     spider = UrlSpider(mgr.user_data_dir, url, max_pages=max_pages)
     source = spider._source.value
 
+    run_id = store.create_scrape_run(
+        run_type="api_scrape_url",
+        source=source,
+        input_url=url,
+        max_pages=max_pages,
+        params={"url": url, "max_pages": max_pages},
+    )
     _active_search = {"found": 0, "page": 0, "done": False, "error": None}
 
     async def run():
@@ -219,13 +235,15 @@ async def scrape_url(body: dict):
                 store.upsert_many(leads)
             _active_search["found"] = len(leads)
             _active_search["done"] = True
+            store.update_scrape_run(run_id, status="completed", leads_found=len(leads), leads_enriched=0)
         except Exception as e:
             logger.exception("URL scrape failed")
             _active_search["error"] = str(e)
             _active_search["done"] = True
+            store.update_scrape_run(run_id, status="failed", error=str(e))
 
     asyncio.create_task(run())
-    return {"status": "started", "source": source}
+    return {"status": "started", "source": source, "run_id": run_id}
 
 
 @app.get("/api/search/stream")
@@ -317,6 +335,19 @@ async def delete_leads(body: dict):
 async def stats():
     store = _get_store()
     return store.stats()
+
+
+@app.get("/api/runs")
+async def list_runs(
+    status: str | None = None,
+    run_type: str | None = None,
+    limit: int = Query(default=50, ge=1, le=500),
+    offset: int = Query(default=0, ge=0),
+):
+    store = _get_store()
+    runs = store.list_scrape_runs(status=status, run_type=run_type, limit=limit, offset=offset)
+    total = store.count_scrape_runs(status=status, run_type=run_type)
+    return {"runs": runs, "total": total, "limit": limit, "offset": offset}
 
 
 # ── Connect Queue ─────────────────────────────────────────────────────────

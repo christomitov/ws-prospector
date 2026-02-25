@@ -36,4 +36,5 @@ Open:
 uv run ws-prospector-debug status
 uv run ws-prospector-debug html 1
 uv run ws-prospector-debug parse 1
+uv run ws-prospector-debug collect --query "founder" --source sales_navigator --max-pages 3
 ```

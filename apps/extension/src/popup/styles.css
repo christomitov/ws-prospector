@@ -1,0 +1,38 @@
+:root {
+  font-family: "IBM Plex Sans", "Segoe UI", sans-serif;
+  color: #0f172a;
+}
+
+body {
+  margin: 0;
+  width: 320px;
+  background: #f8fafc;
+}
+
+.popup-shell {
+  padding: 14px;
+}
+
+h1 {
+  margin: 0;
+  font-size: 16px;
+}
+
+p {
+  margin: 8px 0 14px;
+  font-size: 12px;
+  line-height: 1.45;
+  color: #334155;
+}
+
+button {
+  border: 1px solid #0f172a;
+  border-radius: 8px;
+  background: #0f172a;
+  color: #ffffff;
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 700;
+  padding: 8px 10px;
+  cursor: pointer;
+}

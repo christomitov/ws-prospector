@@ -15,8 +15,10 @@ dependencies = [
 [project.scripts]
 ws-prospector = "linkedin_leads.app:main"
 ws-prospector-debug = "linkedin_leads.debug:main"
+ws-prospector-cli = "linkedin_leads.debug:main"
 li-leads = "linkedin_leads.app:main"
 li-leads-debug = "linkedin_leads.debug:main"
+li-leads-cli = "linkedin_leads.debug:main"
 
 [build-system]
 requires = ["hatchling"]

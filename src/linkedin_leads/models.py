@@ -33,6 +33,13 @@ class Lead(BaseModel):
     def normalize_url(cls, v: str | None) -> str | None:
         if v is None:
             return None
+        v = v.strip()
+        if v.startswith("//"):
+            v = f"https:{v}"
+        elif v.startswith("/"):
+            v = f"https://www.linkedin.com{v}"
+        elif re.match(r"^(?:www\.)?linkedin\.com", v, flags=re.IGNORECASE):
+            v = f"https://{v.lstrip('/')}"
         v = v.split("?")[0].rstrip("/")
         v = re.sub(r"https?://(www\.)?linkedin\.com", "https://www.linkedin.com", v)
         return v

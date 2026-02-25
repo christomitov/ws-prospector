@@ -55,6 +55,10 @@
            :class="tab === 'connect' ? 'border-blue-600 text-blue-600' : 'border-transparent text-gray-500 hover:text-gray-700'">
           Connect
         </a>
+        <a href="#runs" class="pb-2 text-sm font-medium border-b-2 transition cursor-pointer"
+           :class="tab === 'runs' ? 'border-blue-600 text-blue-600' : 'border-transparent text-gray-500 hover:text-gray-700'">
+          Runs
+        </a>
       </nav>
     </div>
 
@@ -209,7 +213,7 @@
                   </td>
                   <td class="px-4 py-3">
                     <template x-if="lead.linkedin_url">
-                      <a :href="lead.linkedin_url" target="_blank" class="text-blue-600 hover:underline" x-text="lead.full_name"></a>
+                      <a :href="toAbsoluteLinkedinUrl(lead.linkedin_url)" target="_blank" class="text-blue-600 hover:underline" x-text="lead.full_name"></a>
                     </template>
                     <template x-if="!lead.linkedin_url">
                       <span x-text="lead.full_name"></span>
@@ -319,7 +323,7 @@
               <template x-for="item in connectQueue" :key="item.id">
                 <tr class="hover:bg-gray-50">
                   <td class="px-4 py-3">
-                    <a :href="item.linkedin_url" target="_blank" class="text-blue-600 hover:underline" x-text="item.full_name"></a>
+                    <a :href="toAbsoluteLinkedinUrl(item.linkedin_url)" target="_blank" class="text-blue-600 hover:underline" x-text="item.full_name"></a>
                   </td>
                   <td class="px-4 py-3">
                     <span class="inline-block px-2 py-0.5 text-xs rounded-full"
@@ -342,6 +346,81 @@
               </template>
               <tr x-show="connectQueue.length === 0">
                 <td colspan="4" class="px-4 py-8 text-center text-gray-400">Queue is empty. Select leads from Results and click "Queue to Connect".</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- Runs Tab -->
+    <div x-show="tab === 'runs'" x-cloak class="fade-in">
+      <div class="bg-white rounded-lg shadow-sm border border-gray-200">
+        <div class="p-4 border-b border-gray-200 flex flex-wrap items-center gap-3">
+          <select x-model="runFilter.status" @change="loadRuns()"
+                  class="px-3 py-1.5 border border-gray-300 rounded-md text-sm">
+            <option value="">All Statuses</option>
+            <option value="running">Running</option>
+            <option value="completed">Completed</option>
+            <option value="failed">Failed</option>
+          </select>
+          <select x-model="runFilter.run_type" @change="loadRuns()"
+                  class="px-3 py-1.5 border border-gray-300 rounded-md text-sm">
+            <option value="">All Types</option>
+            <option value="api_search">API Search</option>
+            <option value="api_scrape_url">API URL Scrape</option>
+            <option value="cli_collect">CLI Collect</option>
+          </select>
+          <button @click="loadRuns()"
+                  class="px-3 py-1.5 text-sm border border-gray-300 rounded-md hover:bg-gray-50 transition">
+            Refresh
+          </button>
+        </div>
+        <div class="overflow-x-auto">
+          <table class="w-full text-sm">
+            <thead class="bg-gray-50 text-gray-500 uppercase text-xs">
+              <tr>
+                <th class="px-4 py-3 text-left">Run</th>
+                <th class="px-4 py-3 text-left">Type</th>
+                <th class="px-4 py-3 text-left">Source</th>
+                <th class="px-4 py-3 text-left">Status</th>
+                <th class="px-4 py-3 text-left">Leads</th>
+                <th class="px-4 py-3 text-left">Outputs</th>
+                <th class="px-4 py-3 text-left">Started</th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-gray-100">
+              <template x-for="run in runs" :key="run.id">
+                <tr class="hover:bg-gray-50">
+                  <td class="px-4 py-3">
+                    <div class="font-medium text-gray-900">#<span x-text="run.id"></span></div>
+                    <div class="text-xs text-gray-500" x-text="run.query_text || run.input_url || '-'"></div>
+                  </td>
+                  <td class="px-4 py-3 text-gray-600" x-text="run.run_type || '-'"></td>
+                  <td class="px-4 py-3 text-gray-600" x-text="formatSource(run.source)"></td>
+                  <td class="px-4 py-3">
+                    <span class="inline-block px-2 py-0.5 text-xs rounded-full"
+                          :class="{
+                            'bg-gray-100 text-gray-600': run.status === 'running',
+                            'bg-green-100 text-green-700': run.status === 'completed',
+                            'bg-red-100 text-red-700': run.status === 'failed'
+                          }"
+                          x-text="formatStatus(run.status)"></span>
+                    <div x-show="run.error" class="text-xs text-red-600 mt-1" x-text="run.error"></div>
+                  </td>
+                  <td class="px-4 py-3 text-gray-600">
+                    <div>Found: <span x-text="run.leads_found || 0"></span></div>
+                    <div class="text-xs text-gray-500">Enriched: <span x-text="run.leads_enriched || 0"></span></div>
+                  </td>
+                  <td class="px-4 py-3 text-xs text-gray-500">
+                    <div x-text="run.json_output_path || '-'"></div>
+                    <div x-text="run.csv_output_path || '-'"></div>
+                  </td>
+                  <td class="px-4 py-3 text-gray-500 text-xs" x-text="formatDateTime(run.started_at)"></td>
+                </tr>
+              </template>
+              <tr x-show="runs.length === 0">
+                <td colspan="7" class="px-4 py-8 text-center text-gray-400">No runs yet.</td>
               </tr>
             </tbody>
           </table>
@@ -458,6 +537,9 @@
         connectStatus: {},
         connectQueue: [],
         connectFilter: '',
+        runs: [],
+        runsTotal: 0,
+        runFilter: { status: '', run_type: '', limit: 100, offset: 0 },
         connectSettings: {
           daily_limit: 10,
           min_delay_seconds: 90,
@@ -484,7 +566,7 @@
         applyRoute() {
           const hash = (window.location.hash || '#search/fields').replace('#', '');
           const [tabPart, modePart] = hash.split('/');
-          const validTabs = ['search', 'results', 'connect', 'settings'];
+          const validTabs = ['search', 'results', 'connect', 'runs', 'settings'];
           this.tab = validTabs.includes(tabPart) ? tabPart : 'search';
 
           if (this.tab === 'search') {
@@ -495,6 +577,9 @@
           }
           if (this.tab === 'connect') {
             this.loadConnectStatus();
+          }
+          if (this.tab === 'runs') {
+            this.loadRuns();
           }
           if (this.tab === 'settings') {
             this.loadConnectSettings();
@@ -628,6 +713,20 @@
           } catch {}
         },
 
+        async loadRuns() {
+          const params = new URLSearchParams();
+          if (this.runFilter.status) params.set('status', this.runFilter.status);
+          if (this.runFilter.run_type) params.set('run_type', this.runFilter.run_type);
+          params.set('limit', this.runFilter.limit);
+          params.set('offset', this.runFilter.offset);
+          try {
+            const res = await fetch(`/api/runs?${params}`);
+            const data = await res.json();
+            this.runs = data.runs || [];
+            this.runsTotal = data.total || 0;
+          } catch {}
+        },
+
         get sortedLeads() {
           const field = this.sortField;
           const asc = this.sortAsc;
@@ -727,6 +826,14 @@
             company_employees: 'Company Employees',
           };
           return labels[source] || source.replace(/_/g, ' ');
+        },
+
+        toAbsoluteLinkedinUrl(raw) {
+          if (!raw) return '';
+          if (raw.startsWith('http://') || raw.startsWith('https://')) return raw;
+          if (raw.startsWith('//')) return `https:${raw}`;
+          if (raw.startsWith('/')) return `https://www.linkedin.com${raw}`;
+          return `https://www.linkedin.com/${raw.replace(/^\/+/, '')}`;
         },
 
         formatDateTime(raw) {

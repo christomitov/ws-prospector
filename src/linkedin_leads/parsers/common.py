@@ -18,6 +18,13 @@ def normalize_linkedin_url(url: str | None) -> str | None:
     """Normalize a LinkedIn profile URL to a canonical form."""
     if not url:
         return None
+    url = url.strip()
+    if url.startswith("//"):
+        url = f"https:{url}"
+    elif url.startswith("/"):
+        url = f"https://www.linkedin.com{url}"
+    elif re.match(r"^(?:www\.)?linkedin\.com", url, flags=re.IGNORECASE):
+        url = f"https://{url.lstrip('/')}"
     url = url.split("?")[0].rstrip("/")
     url = re.sub(r"https?://(www\.)?linkedin\.com", "https://www.linkedin.com", url)
     if "/in/" not in url and "/sales/lead/" not in url:

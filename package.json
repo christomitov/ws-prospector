@@ -1,0 +1,10 @@
+{
+  "name": "ws-prospector-monorepo",
+  "private": true,
+  "scripts": {
+    "ext:dev": "pnpm --dir apps/extension dev",
+    "ext:build": "pnpm --dir apps/extension build",
+    "ext:test": "pnpm --dir apps/extension test",
+    "ext:lint": "pnpm --dir apps/extension lint"
+  }
+}

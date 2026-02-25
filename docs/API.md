@@ -72,7 +72,11 @@ Detection logic:
 ### Search start responses
 When accepted:
 ```json
-{ "status": "started", "source": "linkedin_search|sales_navigator|company_employees" }
+{
+  "status": "started",
+  "source": "linkedin_search|sales_navigator|company_employees",
+  "run_id": 123
+}
 ```
 
 If another search is running:
@@ -127,6 +131,24 @@ Response:
     "company_employees": 0
   },
   "last_scraped": null
+}
+```
+
+### `GET /api/runs`
+Query params:
+
+- `status` (optional)
+- `run_type` (optional: `api_search|api_scrape_url|cli_collect`)
+- `limit` (`1..500`, default `50`)
+- `offset` (`>=0`, default `0`)
+
+Response:
+```json
+{
+  "runs": [],
+  "total": 0,
+  "limit": 50,
+  "offset": 0
 }
 ```
 

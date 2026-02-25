@@ -93,3 +93,4 @@ git push origin main
 1. Replace `v1.0.0` with the actual release version.
 2. DMG is the main distribution artifact; ZIP can be kept as fallback.
 3. Keep `.release-feed/` around locally if you want multi-version appcast history.
+4. The packaged binary supports CLI mode: `wealthsimple-prospector cli <args>` (same subcommands as `ws-prospector-debug`).

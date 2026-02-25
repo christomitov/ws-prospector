@@ -31,6 +31,7 @@ Key implementation files:
 5. Parsers: `src/linkedin_leads/parsers/`
 6. Storage and queue: `src/linkedin_leads/storage.py`
 7. Session management: `src/linkedin_leads/auth/session_manager.py`
+8. Browser extension app: `apps/extension/`
 
 ## Working Expectations
 
@@ -41,3 +42,13 @@ Key implementation files:
 5. When endpoint contracts change, update `docs/API.md`.
 6. Prefer adding small tests for parser/storage/connector behavior changes.
 7. When release packaging or shipping steps change, update `docs/release-process.md`.
+
+## Agent Skills
+
+1. Lead collection skill: `skills/linkedin-prospect-collector/SKILL.md`
+2. Agents should run repo-local CLI via `uv run ws-prospector-debug ...` (or `uv run ws-prospector-cli ...`) instead of assuming global PATH binaries.
+
+## Monorepo Notes
+
+1. Root workspace file: `pnpm-workspace.yaml`.
+2. Extension package lives at `apps/extension` and can be run via root scripts in `package.json`.

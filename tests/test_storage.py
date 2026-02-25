@@ -189,3 +189,52 @@ def test_connect_sent_count_for_local_day(store):
 
     assert store.connect_sent_count_for_local_day(today) == 1
     assert store.connect_sent_count_for_local_day(yesterday) == 1
+
+
+def test_scrape_runs_create_update_and_list(store):
+    run_id = store.create_scrape_run(
+        run_type="cli_collect",
+        source="sales_navigator",
+        query_text="founder",
+        max_pages=3,
+        params={"mode": "query"},
+    )
+    assert run_id > 0
+
+    runs = store.list_scrape_runs(limit=10)
+    assert len(runs) == 1
+    assert runs[0]["id"] == run_id
+    assert runs[0]["status"] == "running"
+    assert runs[0]["source"] == "sales_navigator"
+
+    store.update_scrape_run(
+        run_id,
+        status="completed",
+        leads_found=12,
+        leads_enriched=9,
+        csv_output_path="out/leads.csv",
+    )
+    updated = store.list_scrape_runs(limit=10)[0]
+    assert updated["status"] == "completed"
+    assert updated["leads_found"] == 12
+    assert updated["leads_enriched"] == 9
+    assert updated["csv_output_path"] == "out/leads.csv"
+    assert updated["finished_at"] is not None
+
+
+def test_scrape_runs_filters(store):
+    a = store.create_scrape_run(run_type="api_search", source="linkedin_search")
+    b = store.create_scrape_run(run_type="cli_collect", source="sales_navigator")
+    store.update_scrape_run(a, status="completed")
+    store.update_scrape_run(b, status="failed", error="boom")
+
+    completed = store.list_scrape_runs(status="completed")
+    assert len(completed) == 1
+    assert completed[0]["run_type"] == "api_search"
+
+    cli = store.list_scrape_runs(run_type="cli_collect")
+    assert len(cli) == 1
+    assert cli[0]["status"] == "failed"
+
+    assert store.count_scrape_runs(status="failed") == 1
+    assert store.count_scrape_runs(run_type="api_search") == 1

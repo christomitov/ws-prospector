@@ -23,6 +23,15 @@ def test_lead_url_normalization_www():
     assert lead.linkedin_url == "https://www.linkedin.com/in/jane-smith"
 
 
+def test_lead_url_normalization_relative_sales_link():
+    lead = Lead(
+        linkedin_url="/sales/lead/ACwAA123?_ntb=abc",
+        full_name="Jane Smith",
+        source=LeadSource.sales_navigator,
+    )
+    assert lead.linkedin_url == "https://www.linkedin.com/sales/lead/ACwAA123"
+
+
 def test_lead_url_none():
     lead = Lead(
         full_name="No URL Person",

@@ -1,5 +1,9 @@
 """Tests for parser utility functions."""
 
+from scrapling.parser import Adaptor
+
+from linkedin_leads.models import LeadSource
+from linkedin_leads.parsers.navigator_parser import parse_navigator_results
 from linkedin_leads.parsers.common import (
     clean_text,
     extract_connection_degree,
@@ -55,6 +59,12 @@ class TestNormalizeLinkedinUrl:
         url = "https://www.linkedin.com/sales/lead/ACwAA123"
         assert normalize_linkedin_url(url) == url
 
+    def test_relative_sales_lead_url(self):
+        assert normalize_linkedin_url("/sales/lead/ACwAA123?_ntb=abc") == "https://www.linkedin.com/sales/lead/ACwAA123"
+
+    def test_relative_profile_url(self):
+        assert normalize_linkedin_url("/in/john-doe/") == "https://www.linkedin.com/in/john-doe"
+
 
 class TestExtractConnectionDegree:
     def test_1st(self):
@@ -108,3 +118,32 @@ class TestSplitTitleCompany:
 
     def test_none_input(self):
         assert split_title_company(None) == (None, None)
+
+
+class TestParseNavigatorResults:
+    def test_parses_modern_sales_nav_card(self):
+        html = """
+        <div data-x-search-result="LEAD">
+          <a data-lead-search-result="profile-link-st1" href="/sales/lead/ACwAAAAA,NAME_SEARCH,abcd?_ntb=xyz">
+            <span data-anonymize="person-name">Jane Doe</span>
+          </a>
+          <span class="artdeco-entity-lockup__degree">· 2nd</span>
+          <span data-anonymize="title">Founder</span>
+          <a data-anonymize="company-name">Acme Inc</a>
+          <span data-anonymize="location">Toronto, Ontario, Canada</span>
+          <button>11 mutual connections</button>
+        </div>
+        """
+        leads = parse_navigator_results(Adaptor(html), search_query="sales-nav-board")
+        assert len(leads) == 1
+
+        lead = leads[0]
+        assert lead.full_name == "Jane Doe"
+        assert lead.current_title == "Founder"
+        assert lead.current_company == "Acme Inc"
+        assert lead.location == "Toronto, Ontario, Canada"
+        assert lead.connection_degree == "2nd"
+        assert lead.mutual_connections == 11
+        assert lead.linkedin_url == "https://www.linkedin.com/sales/lead/ACwAAAAA,NAME_SEARCH,abcd"
+        assert lead.source == LeadSource.sales_navigator
+        assert lead.search_query == "sales-nav-board"

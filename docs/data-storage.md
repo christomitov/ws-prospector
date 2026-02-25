@@ -33,6 +33,7 @@ Tables:
 
 1. `leads`
 2. `connect_queue`
+3. `scrape_runs`
 
 Lead upsert behavior:
 
@@ -43,6 +44,11 @@ Exports:
 
 1. CSV export via `/api/leads/export?format=csv`
 2. JSON export via `/api/leads/export?format=json`
+
+Scrape run history:
+
+1. API and CLI scrape jobs are stored in `scrape_runs` with status and timestamps.
+2. Tracks source, query/url input, found/enriched counts, error text, and JSON/CSV output paths.
 
 ## Runtime Paths
 

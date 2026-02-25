@@ -56,3 +56,22 @@ Pagination behavior:
 
 1. URL query is preserved.
 2. `page=<n>` is inserted or replaced for each page.
+3. Sales Navigator URLs run headless-first; if the captured HTML is loader-only (no lead rows), the scraper retries once in headed mode.
+4. Stored `search_query` for URL mode is canonicalized by removing volatile params (`page`, `sessionId`, `_ntb`, `viewAllFilters`).
+
+## CLI Collect Mode
+
+Implementation:
+
+1. Command: `ws-prospector-debug collect` (also `ws-prospector-cli collect` / `li-leads-cli collect`)
+2. Module: `src/linkedin_leads/debug.py`
+3. Profile enrichment: `src/linkedin_leads/profile_scraper.py`
+4. Profile parser: `src/linkedin_leads/parsers/profile_parser.py`
+
+Behavior:
+
+1. Supports query mode (`--query`) and URL mode (`--sales-url` or `--url`).
+2. Reuses existing search spiders, then optionally visits each profile URL.
+3. Enrichment extracts summary/about, experience, education, and recent posts.
+4. Outputs structured JSON plus flattened CSV for spreadsheet sharing.
+5. Each collect run is recorded in SQLite `scrape_runs` with status/counts/output paths.

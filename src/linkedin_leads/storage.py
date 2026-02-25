@@ -47,6 +47,25 @@ CREATE TABLE IF NOT EXISTS app_settings (
     value TEXT NOT NULL,
     updated_at TEXT NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS scrape_runs (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    run_type TEXT NOT NULL,
+    status TEXT NOT NULL,
+    source TEXT,
+    query_text TEXT,
+    input_url TEXT,
+    max_pages INTEGER,
+    leads_found INTEGER NOT NULL DEFAULT 0,
+    leads_enriched INTEGER NOT NULL DEFAULT 0,
+    json_output_path TEXT,
+    csv_output_path TEXT,
+    params_json TEXT,
+    error TEXT,
+    created_at TEXT NOT NULL,
+    started_at TEXT NOT NULL,
+    finished_at TEXT
+);
 """
 
 _CREATE_INDEXES = """
@@ -55,6 +74,8 @@ CREATE INDEX IF NOT EXISTS idx_leads_company ON leads(current_company);
 CREATE INDEX IF NOT EXISTS idx_leads_scraped_at ON leads(scraped_at);
 CREATE INDEX IF NOT EXISTS idx_connect_status ON connect_queue(status);
 CREATE INDEX IF NOT EXISTS idx_connect_scheduled ON connect_queue(scheduled_at);
+CREATE INDEX IF NOT EXISTS idx_scrape_runs_created_at ON scrape_runs(created_at);
+CREATE INDEX IF NOT EXISTS idx_scrape_runs_status ON scrape_runs(status);
 """
 
 _UPSERT = """
@@ -408,3 +429,109 @@ class LeadStore:
 
     def save_connect_settings(self, settings: dict) -> None:
         self.set_json_setting("connect_settings", settings)
+
+    # ── Scrape Runs ────────────────────────────────────────────────────────
+
+    def create_scrape_run(
+        self,
+        *,
+        run_type: str,
+        status: str = "running",
+        source: str | None = None,
+        query_text: str | None = None,
+        input_url: str | None = None,
+        max_pages: int | None = None,
+        params: dict | None = None,
+    ) -> int:
+        now = datetime.now(timezone.utc).isoformat()
+        payload = json.dumps(params) if params is not None else None
+        with self._connect() as conn:
+            cur = conn.execute(
+                """INSERT INTO scrape_runs
+                   (run_type, status, source, query_text, input_url, max_pages,
+                    params_json, created_at, started_at)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                (run_type, status, source, query_text, input_url, max_pages, payload, now, now),
+            )
+            return int(cur.lastrowid)
+
+    def update_scrape_run(self, run_id: int, **updates: object) -> None:
+        if run_id <= 0:
+            return
+
+        allowed = {
+            "status",
+            "source",
+            "query_text",
+            "input_url",
+            "max_pages",
+            "leads_found",
+            "leads_enriched",
+            "json_output_path",
+            "csv_output_path",
+            "params_json",
+            "error",
+            "finished_at",
+        }
+        set_parts: list[str] = []
+        values: list[object] = []
+        for key, value in updates.items():
+            if key not in allowed:
+                continue
+            if key == "params_json" and isinstance(value, dict):
+                value = json.dumps(value)
+            set_parts.append(f"{key} = ?")
+            values.append(value)
+
+        if not set_parts:
+            return
+
+        if "status" in updates and "finished_at" not in updates and updates.get("status") in {"completed", "failed"}:
+            set_parts.append("finished_at = ?")
+            values.append(datetime.now(timezone.utc).isoformat())
+
+        values.append(run_id)
+        with self._connect() as conn:
+            conn.execute(
+                f"UPDATE scrape_runs SET {', '.join(set_parts)} WHERE id = ?",
+                values,
+            )
+
+    def list_scrape_runs(
+        self,
+        *,
+        limit: int = 50,
+        offset: int = 0,
+        status: str | None = None,
+        run_type: str | None = None,
+    ) -> list[dict]:
+        safe_limit = max(1, min(int(limit), 500))
+        safe_offset = max(0, int(offset))
+        clauses: list[str] = []
+        params: list[object] = []
+        if status:
+            clauses.append("status = ?")
+            params.append(status)
+        if run_type:
+            clauses.append("run_type = ?")
+            params.append(run_type)
+        where = f"WHERE {' AND '.join(clauses)}" if clauses else ""
+        sql = f"SELECT * FROM scrape_runs {where} ORDER BY id DESC LIMIT ? OFFSET ?"
+        params.extend([safe_limit, safe_offset])
+        with self._connect() as conn:
+            rows = conn.execute(sql, tuple(params)).fetchall()
+        return [dict(r) for r in rows]
+
+    def count_scrape_runs(self, *, status: str | None = None, run_type: str | None = None) -> int:
+        clauses: list[str] = []
+        params: list[object] = []
+        if status:
+            clauses.append("status = ?")
+            params.append(status)
+        if run_type:
+            clauses.append("run_type = ?")
+            params.append(run_type)
+        where = f"WHERE {' AND '.join(clauses)}" if clauses else ""
+        sql = f"SELECT COUNT(*) FROM scrape_runs {where}"
+        with self._connect() as conn:
+            return int(conn.execute(sql, tuple(params)).fetchone()[0])

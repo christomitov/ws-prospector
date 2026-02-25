@@ -32,6 +32,7 @@ class LinkedInSpider(ABC):
 
     download_delay: float = DEFAULT_DELAY
     max_retries: int = MAX_RETRIES
+    headless: bool = True
 
     def __init__(self, user_data_dir: str, max_pages: int = 5) -> None:
         self.user_data_dir = user_data_dir
@@ -79,6 +80,12 @@ class LinkedInSpider(ABC):
             await self._throttle()
             async with browser_lock:
                 response = await asyncio.to_thread(self._fetch, url)
+                if response is not None and self._should_retry_headful(response, url):
+                    logger.info(
+                        "Headless Sales Nav response was loading-only; retrying in headed mode for %s",
+                        url,
+                    )
+                    response = await asyncio.to_thread(self._fetch, url, False)
             if response is None:
                 return None
             if not self._is_blocked(response):
@@ -91,11 +98,13 @@ class LinkedInSpider(ABC):
         logger.error("Max retries exceeded for %s", url)
         return None
 
-    def _fetch(self, url: str) -> object | None:
+    def _fetch(self, url: str, headless: bool | None = None) -> object | None:
+        if headless is None:
+            headless = self.headless
         try:
             return StealthyFetcher.fetch(
                 url,
-                headless=True,
+                headless=headless,
                 real_chrome=True,
                 user_data_dir=self.user_data_dir,
                 block_images=True,
@@ -105,6 +114,26 @@ class LinkedInSpider(ABC):
         except Exception:
             logger.exception("Fetch failed for %s", url)
             return None
+
+    def _should_retry_headful(self, response: object, url: str) -> bool:
+        """Detect headless Sales Nav skeleton pages and retry once in headed mode."""
+        if not self.headless:
+            return False
+        if "/sales/search/people" not in url:
+            return False
+
+        html = ""
+        if hasattr(response, "html_content"):
+            html = response.html_content or ""
+        elif hasattr(response, "text"):
+            html = response.text or ""
+
+        if not html:
+            return False
+
+        has_loader = "initial-load-animation" in html or "salesnav-image" in html
+        has_leads = "/sales/lead/" in html or 'data-x-search-result="LEAD"' in html
+        return has_loader and not has_leads
 
     def _save_debug_html(self, response: object, page_num: int) -> None:
         """Save raw HTML to disk for debugging selectors."""
@@ -144,13 +173,37 @@ class LinkedInSpider(ABC):
 
 
 def _wait_for_results(page: object) -> None:
-    """Playwright page_action: wait for search results to render."""
+    """Playwright page_action: wait for results to render."""
     import time as _time
 
+    def _count(selector: str) -> int:
+        try:
+            return page.locator(selector).count()
+        except Exception:
+            return 0
+
     try:
-        # Scroll down to trigger lazy-loaded results
+        url = str(getattr(page, "url", "") or "")
+
+        # Sales Navigator is JS-heavy and often returns only loading skeletons
+        # unless we wait for LEAD rows to mount.
+        if "/sales/search/people" in url:
+            for _ in range(12):
+                if (
+                    _count("div[data-x-search-result='LEAD']") > 0
+                    or _count("a[data-lead-search-result*='profile-link']") > 0
+                    or _count("a[href*='/sales/lead/']") > 0
+                ):
+                    break
+                page.evaluate("window.scrollTo(0, document.body.scrollHeight * 0.55)")
+                _time.sleep(1.0)
+            page.evaluate("window.scrollTo(0, 0)")
+            _time.sleep(0.5)
+            return
+
+        # LinkedIn people/company pages.
         page.evaluate("window.scrollTo(0, document.body.scrollHeight / 2)")
-        _time.sleep(1)
+        _time.sleep(1.0)
         page.evaluate("window.scrollTo(0, 0)")
         _time.sleep(0.5)
     except Exception:

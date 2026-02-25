@@ -25,7 +25,13 @@ Debug CLI:
 uv run ws-prospector-debug status
 uv run ws-prospector-debug html 1
 uv run ws-prospector-debug parse 1
+uv run ws-prospector-debug collect --query "founder" --source sales_navigator --max-pages 3
+uv run ws-prospector-debug collect --sales-url "https://www.linkedin.com/sales/search/people?..." --csv-out leads.csv --json-out leads.json
 ```
+
+The `collect` command outputs structured JSON plus flattened CSV (for Sheets).
+It can also enrich each lead by visiting profile pages and extracting About,
+experience, education, and recent activity text.
 
 ## Build Release (Signed Zip + Optional Notarized DMG)
 
@@ -94,6 +100,26 @@ Start here:
 
 - [Documentation Index](docs/README.md)
 - [Release Process](docs/release-process.md)
+
+## Monorepo Layout
+
+This repo now includes the browser extension code at:
+
+- `apps/extension`
+
+Root workspace helper files:
+
+- `pnpm-workspace.yaml`
+- `package.json` (extension convenience scripts)
+
+Run extension tasks from repo root:
+
+```bash
+pnpm ext:dev
+pnpm ext:build
+pnpm ext:test
+pnpm ext:lint
+```
 
 ## Auto Updates (Sparkle)
 
