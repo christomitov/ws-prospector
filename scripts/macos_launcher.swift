@@ -31,7 +31,7 @@ final class LauncherAppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationDockMenu(_ sender: NSApplication) -> NSMenu? {
-        return buildActionsMenu(includeKeyEquivalents: false)
+        return buildActionsMenu(includeKeyEquivalents: false, includeQuit: false)
     }
 
     @objc private func openDashboard(_ sender: Any?) {
@@ -58,12 +58,12 @@ final class LauncherAppDelegate: NSObject, NSApplicationDelegate {
         let appMenuItem = NSMenuItem()
         mainMenu.addItem(appMenuItem)
 
-        let appMenu = buildActionsMenu(includeKeyEquivalents: true)
+        let appMenu = buildActionsMenu(includeKeyEquivalents: true, includeQuit: true)
         appMenuItem.submenu = appMenu
         NSApp.mainMenu = mainMenu
     }
 
-    private func buildActionsMenu(includeKeyEquivalents: Bool) -> NSMenu {
+    private func buildActionsMenu(includeKeyEquivalents: Bool, includeQuit: Bool) -> NSMenu {
         let menu = NSMenu()
         menu.addItem(
             withTitle: "Check for Updates...",
@@ -76,12 +76,14 @@ final class LauncherAppDelegate: NSObject, NSApplicationDelegate {
             action: #selector(openDashboard(_:)),
             keyEquivalent: includeKeyEquivalents ? "o" : ""
         )
-        menu.addItem(NSMenuItem.separator())
-        menu.addItem(
-            withTitle: "Quit Wealthsimple Prospector",
-            action: #selector(quitApp(_:)),
-            keyEquivalent: includeKeyEquivalents ? "q" : ""
-        )
+        if includeQuit {
+            menu.addItem(NSMenuItem.separator())
+            menu.addItem(
+                withTitle: "Quit Wealthsimple Prospector",
+                action: #selector(quitApp(_:)),
+                keyEquivalent: includeKeyEquivalents ? "q" : ""
+            )
+        }
         menu.items.forEach { $0.target = self }
         return menu
     }
