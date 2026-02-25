@@ -285,6 +285,46 @@ def _flatten_csv_row(record: dict) -> dict:
     }
 
 
+CSV_FIELDNAMES = [
+    "run_id",
+    "full_name",
+    "linkedin_url",
+    "profile_url",
+    "source_url",
+    "source",
+    "search_query",
+    "headline",
+    "current_title",
+    "current_company",
+    "location",
+    "connection_degree",
+    "mutual_connections",
+    "about",
+    "experience_count",
+    "experience_preview",
+    "education_count",
+    "education_preview",
+    "certifications_count",
+    "certifications_preview",
+    "volunteering_count",
+    "volunteering_preview",
+    "skills_count",
+    "skills_preview",
+    "honors_count",
+    "honors_preview",
+    "languages_count",
+    "languages_preview",
+    "featured_posts_count",
+    "featured_posts_preview",
+    "activity_posts_count",
+    "activity_posts_preview",
+    "recent_posts_count",
+    "recent_posts_preview",
+    "enrichment_errors",
+    "collected_at",
+]
+
+
 def _dedupe_trimmed(values: list[str], *, max_items: int = 8, max_chars: int = 260) -> list[str]:
     out: list[str] = []
     seen: set[str] = set()
@@ -379,46 +419,8 @@ def _write_json(path: Path, data: object) -> None:
 
 def _records_to_csv_text(records: list[dict]) -> str:
     rows = [_flatten_csv_row(r) for r in records]
-    fieldnames = [
-        "run_id",
-        "full_name",
-        "linkedin_url",
-        "profile_url",
-        "source_url",
-        "source",
-        "search_query",
-        "headline",
-        "current_title",
-        "current_company",
-        "location",
-        "connection_degree",
-        "mutual_connections",
-        "about",
-        "experience_count",
-        "experience_preview",
-        "education_count",
-        "education_preview",
-        "certifications_count",
-        "certifications_preview",
-        "volunteering_count",
-        "volunteering_preview",
-        "skills_count",
-        "skills_preview",
-        "honors_count",
-        "honors_preview",
-        "languages_count",
-        "languages_preview",
-        "featured_posts_count",
-        "featured_posts_preview",
-        "activity_posts_count",
-        "activity_posts_preview",
-        "recent_posts_count",
-        "recent_posts_preview",
-        "enrichment_errors",
-        "collected_at",
-    ]
     out = io.StringIO()
-    writer = csv.DictWriter(out, fieldnames=fieldnames)
+    writer = csv.DictWriter(out, fieldnames=CSV_FIELDNAMES)
     writer.writeheader()
     for row in rows:
         writer.writerow(row)
@@ -428,6 +430,22 @@ def _records_to_csv_text(records: list[dict]) -> str:
 def _write_csv(path: Path, records: list[dict]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(_records_to_csv_text(records), encoding="utf-8", newline="")
+
+
+def _append_csv_row(path: Path, row: dict, *, write_header: bool) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("a", encoding="utf-8", newline="") as handle:
+        writer = csv.DictWriter(handle, fieldnames=CSV_FIELDNAMES)
+        if write_header:
+            writer.writeheader()
+        writer.writerow(row)
+
+
+def _init_csv(path: Path) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("w", encoding="utf-8", newline="") as handle:
+        writer = csv.DictWriter(handle, fieldnames=CSV_FIELDNAMES)
+        writer.writeheader()
 
 
 async def _collect_async(args: argparse.Namespace) -> int:
@@ -524,20 +542,39 @@ async def _collect_async(args: argparse.Namespace) -> int:
     )
 
     try:
+        json_out = Path(args.json_out) if args.json_out else None
+        csv_out = Path(args.csv_out) if args.csv_out else None
+        if not json_out and not csv_out and not stdout_mode:
+            json_out, csv_out = _default_output_paths("lead-collection")
+
+        if json_out:
+            _write_json(json_out, [])
+        if csv_out:
+            _init_csv(csv_out)
+
+        store.update_scrape_run(
+            run_id,
+            json_output_path=str(json_out) if json_out else None,
+            csv_output_path=str(csv_out) if csv_out else None,
+            leads_found=0,
+            leads_enriched=0,
+            params_json=run_params,
+        )
+
         if not stdout_mode:
-            print(f"Starting run #{run_id} ({source})")
+            print(f"Starting run #{run_id} ({source})", flush=True)
             if person_query_mode and args.max_pages is None:
-                print("  Person query mode: defaulting to --max-pages 1 for faster lookup.")
+                print("  Person query mode: defaulting to --max-pages 1 for faster lookup.", flush=True)
 
         async def on_progress(found: int, page: int) -> None:
             if not stdout_mode:
-                print(f"  Search page {page}: {found} leads so far")
+                print(f"  Search page {page}: {found} leads so far", flush=True)
 
         leads = await spider.crawl(on_progress=on_progress)
         if args.max_leads and len(leads) > args.max_leads:
             leads = leads[: args.max_leads]
             if not stdout_mode:
-                print(f"Trimmed to max leads: {args.max_leads}")
+                print(f"Trimmed to max leads: {args.max_leads}", flush=True)
 
         if person_query_mode and leads:
             leads = sorted(
@@ -546,7 +583,7 @@ async def _collect_async(args: argparse.Namespace) -> int:
                 reverse=True,
             )[:1]
             if not stdout_mode:
-                print("Person query mode enabled; selecting best-matching profile only.")
+                print("Person query mode enabled; selecting best-matching profile only.", flush=True)
 
         if args.store and leads:
             store.upsert_many(leads)
@@ -554,11 +591,12 @@ async def _collect_async(args: argparse.Namespace) -> int:
         collected_at = datetime.now(timezone.utc).isoformat()
         records: list[dict] = []
         enriched_count = 0
+        csv_header_written = bool(csv_out)
 
         for idx, lead in enumerate(leads, 1):
             lead_dict = _lead_to_dict(lead)
             if not stdout_mode:
-                print(f"  [{idx}/{len(leads)}] {lead.full_name}")
+                print(f"  [{idx}/{len(leads)}] {lead.full_name}", flush=True)
             if args.skip_enrich:
                 profile_payload = {
                     "profile_url": lead.linkedin_url,
@@ -613,19 +651,25 @@ async def _collect_async(args: argparse.Namespace) -> int:
                 "collected_at": collected_at,
             }
             records.append(record)
+
+            if json_out:
+                # Keep JSON files incrementally readable while long runs are in progress.
+                _write_json(json_out, records)
+            if csv_out:
+                _append_csv_row(csv_out, _flatten_csv_row(record), write_header=not csv_header_written)
+                csv_header_written = True
+
+            store.update_scrape_run(
+                run_id,
+                status="running",
+                leads_found=len(records),
+                leads_enriched=enriched_count,
+                params_json=run_params,
+            )
+
             if stdout_mode and args.stdout == "ndjson":
                 out_record = _compact_record(record) if args.output_view == "compact" else record
                 print(json.dumps(out_record, ensure_ascii=False), flush=True)
-
-        json_out = Path(args.json_out) if args.json_out else None
-        csv_out = Path(args.csv_out) if args.csv_out else None
-        if not json_out and not csv_out and not stdout_mode:
-            json_out, csv_out = _default_output_paths("lead-collection")
-
-        if json_out:
-            _write_json(json_out, records)
-        if csv_out:
-            _write_csv(csv_out, records)
 
         if stdout_mode:
             if args.stdout == "json":
@@ -645,13 +689,13 @@ async def _collect_async(args: argparse.Namespace) -> int:
         )
 
         if not stdout_mode:
-            print(f"Completed run #{run_id}.")
-            print(f"Leads found: {len(leads)}")
-            print(f"Profiles enriched: {enriched_count}")
+            print(f"Completed run #{run_id}.", flush=True)
+            print(f"Leads found: {len(leads)}", flush=True)
+            print(f"Profiles enriched: {enriched_count}", flush=True)
             if json_out:
-                print(f"JSON output: {json_out}")
+                print(f"JSON output: {json_out}", flush=True)
             if csv_out:
-                print(f"CSV output: {csv_out}")
+                print(f"CSV output: {csv_out}", flush=True)
         return 0
     except Exception as exc:
         store.update_scrape_run(
@@ -739,6 +783,7 @@ def _build_parser() -> argparse.ArgumentParser:
             "  - JSON: array of records { run_id, lead, profile, collected_at }\n"
             "  - CSV: flattened columns for easy spreadsheet sharing\n"
             "  - NDJSON: one JSON record per line as each profile is processed\n"
+            "  - --json-out/--csv-out are updated incrementally during long runs\n"
             "  - output-view=compact (stdout JSON/NDJSON): flat, LLM-ready fields\n"
             "  - profile includes main-page sections when available:\n"
             "    experience_items, education_items, certifications_items,\n"
@@ -805,8 +850,16 @@ def _build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Skip profile visits and only output search result fields.",
     )
-    collect.add_argument("--json-out", default="", help="Path for JSON output (default: auto timestamped file).")
-    collect.add_argument("--csv-out", default="", help="Path for CSV output (default: auto timestamped file).")
+    collect.add_argument(
+        "--json-out",
+        default="",
+        help="Path for JSON output (default: auto timestamped file; updated incrementally during run).",
+    )
+    collect.add_argument(
+        "--csv-out",
+        default="",
+        help="Path for CSV output (default: auto timestamped file; updated incrementally during run).",
+    )
     collect.add_argument(
         "--store",
         action="store_true",

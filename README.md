@@ -1,5 +1,9 @@
 # Wealthsimple Prospector Monorepo
 
+<p align="left">
+  <img src="apps/extension/public/icons/icon128.png" alt="Wealthsimple Prospector icon" width="72" />
+</p>
+
 Wealthsimple Prospector is a multi-surface lead intelligence platform (extension, CLI, and web app) for discovering, enriching, and curating high-quality LinkedIn and Sales Navigator prospects for outbound.
 
 ## Product Surfaces

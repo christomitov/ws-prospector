@@ -22,6 +22,8 @@ APP_MACOS_DIR="${APP_CONTENTS_DIR}/MacOS"
 APP_RESOURCES_DIR="${APP_CONTENTS_DIR}/Resources"
 APP_FRAMEWORKS_DIR="${APP_CONTENTS_DIR}/Frameworks"
 APP_PAYLOAD_DIR="${APP_RESOURCES_DIR}/app"
+APP_ICON_SOURCE="${ROOT_DIR}/assets/icons/app.icns"
+APP_ICON_NAME="AppIcon.icns"
 APP_LAUNCHER_NAME="wealthsimple-prospector-launcher"
 APP_LAUNCHER_PATH="${APP_MACOS_DIR}/${APP_LAUNCHER_NAME}"
 APP_BUNDLE_ID="${APPLE_BUNDLE_ID:-com.christo.wealthsimpleprospector}"
@@ -148,6 +150,13 @@ rm -rf "${APP_BUNDLE_PATH}"
 mkdir -p "${APP_MACOS_DIR}" "${APP_PAYLOAD_DIR}" "${APP_FRAMEWORKS_DIR}"
 
 SPARKLE_PLIST_KEYS=""
+ICON_PLIST_KEYS=""
+
+if [[ -f "$APP_ICON_SOURCE" ]]; then
+  ICON_PLIST_KEYS+=$'  <key>CFBundleIconFile</key>\n'
+  ICON_PLIST_KEYS+=$'  <string>AppIcon</string>\n'
+fi
+
 if [[ "$SPARKLE_ENABLED" == "1" ]]; then
   SPARKLE_PLIST_KEYS+=$'  <key>SUEnableAutomaticChecks</key>\n  <true/>\n'
   SPARKLE_PLIST_KEYS+=$'  <key>SUScheduledCheckInterval</key>\n  <integer>86400</integer>\n'
@@ -188,12 +197,16 @@ cat > "${APP_CONTENTS_DIR}/Info.plist" <<EOF
   <string>${MACOS_DEPLOYMENT_TARGET}</string>
   <key>NSHighResolutionCapable</key>
   <true/>
+${ICON_PLIST_KEYS}
 ${SPARKLE_PLIST_KEYS}
 </dict>
 </plist>
 EOF
 
 cp -R "${DIST_APP_DIR}/." "${APP_PAYLOAD_DIR}/"
+if [[ -f "$APP_ICON_SOURCE" ]]; then
+  cp "$APP_ICON_SOURCE" "${APP_RESOURCES_DIR}/${APP_ICON_NAME}"
+fi
 download_sparkle_framework
 
 if command -v xcrun >/dev/null 2>&1 && xcrun --find swiftc >/dev/null 2>&1; then
