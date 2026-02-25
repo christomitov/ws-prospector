@@ -8,6 +8,7 @@ This is the manual release flow using `gh` + Sparkle.
 2. You are authenticated with GitHub CLI (`gh auth status`).
 3. GitHub Pages is enabled for the repo (either `main` `/` or `gh-pages` `/`).
 4. `WSP_SPARKLE_PUBLIC_KEY` is set in `.env`.
+5. `WSP_MACOS_DEPLOYMENT_TARGET` is set to the minimum macOS you want to support (recommended: `11.0`).
 
 ## GitHub Pages Source
 
@@ -73,7 +74,7 @@ cp dist/wealthsimple-prospector-macos.dmg .release-feed/
 
 ./.build/sparkle/Sparkle-2.9.0/bin/generate_appcast \
   --account ed25519 \
-  --download-url-prefix "https://github.com/christomitov/ws-prospector/releases/download/v1.0.0" \
+  --download-url-prefix "https://github.com/christomitov/ws-prospector/releases/download/v1.0.0/" \
   .release-feed
 
 cp .release-feed/appcast.xml appcast.xml

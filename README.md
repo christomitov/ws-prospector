@@ -69,6 +69,7 @@ Optional overrides:
 
 - `APPLE_SIGN_IDENTITY`: explicit signing identity.
 - `APPLE_NOTARY_PROFILE`: custom notarytool keychain profile name.
+- `WSP_MACOS_DEPLOYMENT_TARGET`: minimum macOS version for the app binaries (default: `11.0`).
 - `WSP_ENABLE_SPARKLE`: set `1` (default) to embed Sparkle updater.
 - `WSP_SPARKLE_FEED_URL`: appcast URL (default: project GitHub Pages appcast).
 - `WSP_SPARKLE_PUBLIC_KEY`: Sparkle `SUPublicEDKey` value.
@@ -82,7 +83,8 @@ Friend flow:
 Notes:
 
 1. Chrome must be installed on the target machine.
-2. Build on the same OS/architecture as the target machine.
+2. Build on the same architecture as the target machine (Apple Silicon vs Intel).
+3. Use a low `WSP_MACOS_DEPLOYMENT_TARGET` (default `11.0`) for broad macOS support.
 
 ## Docs
 

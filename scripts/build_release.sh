@@ -43,6 +43,7 @@ SPARKLE_FEED_URL="${WSP_SPARKLE_FEED_URL:-https://christomitov.github.io/ws-pros
 SPARKLE_PUBLIC_KEY="${WSP_SPARKLE_PUBLIC_KEY:-}"
 SPARKLE_FRAMEWORK_SOURCE="${WSP_SPARKLE_FRAMEWORK_SOURCE:-}"
 SPARKLE_CACHE_DIR="${ROOT_DIR}/.build/sparkle"
+MACOS_DEPLOYMENT_TARGET="${WSP_MACOS_DEPLOYMENT_TARGET:-11.0}"
 DMG_CREATED=0
 
 if [[ "$SPARKLE_ENABLED" == "1" && -z "$SPARKLE_PUBLIC_KEY" ]]; then
@@ -112,6 +113,9 @@ if ! command -v uv >/dev/null 2>&1; then
   exit 1
 fi
 
+export MACOSX_DEPLOYMENT_TARGET="$MACOS_DEPLOYMENT_TARGET"
+echo "==> Using macOS deployment target: ${MACOS_DEPLOYMENT_TARGET}"
+
 echo "==> Syncing dependencies (including dev tools)..."
 uv sync --group dev
 
@@ -179,7 +183,7 @@ cat > "${APP_CONTENTS_DIR}/Info.plist" <<EOF
   <key>CFBundleVersion</key>
   <string>1</string>
   <key>LSMinimumSystemVersion</key>
-  <string>12.0</string>
+  <string>${MACOS_DEPLOYMENT_TARGET}</string>
   <key>NSHighResolutionCapable</key>
   <true/>
 ${SPARKLE_PLIST_KEYS}
@@ -192,10 +196,11 @@ download_sparkle_framework
 
 if command -v xcrun >/dev/null 2>&1 && xcrun --find swiftc >/dev/null 2>&1; then
   echo "==> Compiling native macOS launcher..."
+  SWIFT_TARGET_TRIPLE="arm64-apple-macos${MACOS_DEPLOYMENT_TARGET}"
   if [[ "$SPARKLE_ENABLED" == "1" ]]; then
-    xcrun swiftc -O -framework Cocoa -F "${APP_FRAMEWORKS_DIR}" -framework Sparkle "${LAUNCHER_SOURCE}" -o "${APP_LAUNCHER_PATH}"
+    xcrun swiftc -O -target "${SWIFT_TARGET_TRIPLE}" -framework Cocoa -F "${APP_FRAMEWORKS_DIR}" -framework Sparkle "${LAUNCHER_SOURCE}" -o "${APP_LAUNCHER_PATH}"
   else
-    xcrun swiftc -O -framework Cocoa "${LAUNCHER_SOURCE}" -o "${APP_LAUNCHER_PATH}"
+    xcrun swiftc -O -target "${SWIFT_TARGET_TRIPLE}" -framework Cocoa "${LAUNCHER_SOURCE}" -o "${APP_LAUNCHER_PATH}"
   fi
 else
   echo "==> swiftc not found; falling back to shell launcher."
