@@ -1,29 +1,28 @@
 # Wealthsimple Prospector Monorepo
 
-This repository contains two related products:
+Wealthsimple Prospector is a multi-surface lead intelligence platform (extension, CLI, and web app) for discovering, enriching, and curating high-quality LinkedIn and Sales Navigator prospects for outbound.
 
-1. `src/linkedin_leads` — Python app (local web UI + API + scraping/connector CLI).
-2. `apps/extension` — browser extension app.
+## Product Surfaces
 
-The goal is to keep lead collection workflows, extension work, and shared docs in one place while keeping each app isolated.
+1. Web app + API (`src/linkedin_leads`) for search, review, queueing, and operations.
+2. CLI (`ws-prospector-debug` / `ws-prospector-cli`) for agent-driven collection and enrichment runs.
+3. Browser extension (`apps/extension`) for in-browser workflows.
 
-## What The Python App Does
+## Core Workflow
 
-1. LinkedIn people search extraction.
-2. Sales Navigator extraction (including pasted Sales Nav URLs).
-3. Company people extraction.
-4. Lead storage/export (SQLite + CSV/JSON).
-5. Queue-based auto connector.
-6. CLI collection flow for agent-driven enrichment (`collect` command).
+1. Find prospects from LinkedIn search, Sales Navigator URL, or company pages.
+2. Enrich profiles (about, experience, education, activity) into structured records.
+3. Curate and qualify leads for prospecting with JSON/CSV outputs.
+4. Share CSV in Sheets and optionally run connection queue workflows.
 
-## Repo Layout
+## Repository Layout
 
-- `src/linkedin_leads/` — Python application source.
+- `src/linkedin_leads/` — Python app source (web UI, API, spiders, storage, connector).
 - `apps/extension/` — extension source, docs, and build config.
 - `docs/` — Python app docs (API, architecture, release process).
-- `skills/` — agent skills (including collector skill instructions).
+- `skills/` — agent skill instructions (including collector workflow guidance).
 
-## Quick Start (Python App)
+## Run The Web App
 
 ```bash
 uv sync
@@ -32,7 +31,7 @@ uv run ws-prospector
 
 Open: `http://127.0.0.1:8000`
 
-## CLI (Agent-Friendly)
+## Run The CLI
 
 Run from repo root with `uv run` (no global PATH dependency):
 
@@ -44,10 +43,10 @@ uv run ws-prospector-debug collect --sales-url "https://www.linkedin.com/sales/s
 
 `collect` outputs:
 
-1. Structured JSON for downstream LLM qualification.
-2. Flattened CSV for Google Sheets/manual sharing.
+1. Structured JSON for downstream LLM evaluation.
+2. Flattened CSV for Sheets/manual sharing.
 
-## Extension Workflows
+## Run The Extension
 
 From repo root:
 
@@ -68,14 +67,11 @@ Start here:
 - [API Reference](docs/API.md)
 - [Architecture](docs/architecture.md)
 - [Release Process](docs/release-process.md)
-
-Extension-specific docs:
-
 - [Extension Docs](apps/extension/docs/README.md)
 
 ## Release Notes
 
-The root README intentionally stays focused on development usage.
-For macOS packaging, signing, notarization, and Sparkle updater details, use:
+The root README stays focused on product purpose and development usage.
+For macOS packaging/signing/notarization/Sparkle details, use:
 
 - [Release Process](docs/release-process.md)
