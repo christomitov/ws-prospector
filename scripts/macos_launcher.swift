@@ -1,12 +1,19 @@
 import Cocoa
+#if canImport(Sparkle)
+import Sparkle
+#endif
 
 final class LauncherAppDelegate: NSObject, NSApplicationDelegate {
     private let appURL = URL(string: "http://127.0.0.1:8000")!
     private var serverProcess: Process?
     private var lastDashboardOpenAt = Date.distantPast
+    #if canImport(Sparkle)
+    private var updaterController: SPUStandardUpdaterController?
+    #endif
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         configureMenu()
+        setupUpdater()
         startServer()
         DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { [weak self] in
             self?.openDashboardNow()
@@ -47,6 +54,14 @@ final class LauncherAppDelegate: NSObject, NSApplicationDelegate {
         mainMenu.addItem(appMenuItem)
 
         let appMenu = NSMenu()
+        #if canImport(Sparkle)
+        appMenu.addItem(
+            withTitle: "Check for Updates...",
+            action: #selector(checkForUpdates(_:)),
+            keyEquivalent: ""
+        )
+        appMenu.addItem(NSMenuItem.separator())
+        #endif
         appMenu.addItem(
             withTitle: "Open Dashboard",
             action: #selector(openDashboard(_:)),
@@ -62,6 +77,31 @@ final class LauncherAppDelegate: NSObject, NSApplicationDelegate {
         appMenu.items.forEach { $0.target = self }
         appMenuItem.submenu = appMenu
         NSApp.mainMenu = mainMenu
+    }
+
+    private func setupUpdater() {
+        #if canImport(Sparkle)
+        guard
+            let info = Bundle.main.infoDictionary,
+            let feedURL = info["SUFeedURL"] as? String,
+            !feedURL.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+            let publicKey = info["SUPublicEDKey"] as? String,
+            !publicKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        else {
+            return
+        }
+        updaterController = SPUStandardUpdaterController(
+            startingUpdater: true,
+            updaterDelegate: nil,
+            userDriverDelegate: nil
+        )
+        #endif
+    }
+
+    @objc private func checkForUpdates(_ sender: Any?) {
+        #if canImport(Sparkle)
+        updaterController?.checkForUpdates(sender)
+        #endif
     }
 
     private func startServer() {

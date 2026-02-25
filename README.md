@@ -69,6 +69,9 @@ Optional overrides:
 
 - `APPLE_SIGN_IDENTITY`: explicit signing identity.
 - `APPLE_NOTARY_PROFILE`: custom notarytool keychain profile name.
+- `WSP_ENABLE_SPARKLE`: set `1` (default) to embed Sparkle updater.
+- `WSP_SPARKLE_FEED_URL`: appcast URL (default: project GitHub Pages appcast).
+- `WSP_SPARKLE_PUBLIC_KEY`: Sparkle `SUPublicEDKey` value.
 
 Friend flow:
 
@@ -87,3 +90,9 @@ Start here:
 
 - [Documentation Index](docs/README.md)
 - [Release Process](docs/release-process.md)
+
+## Auto Updates (Sparkle)
+
+The native launcher embeds Sparkle when `WSP_ENABLE_SPARKLE=1`.
+To enable actual update checks, set `WSP_SPARKLE_PUBLIC_KEY` in `.env` and keep
+`appcast.xml` published on GitHub Pages.

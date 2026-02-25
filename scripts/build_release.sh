@@ -20,6 +20,7 @@ APP_BUNDLE_PATH="dist/${APP_BUNDLE_NAME}"
 APP_CONTENTS_DIR="${APP_BUNDLE_PATH}/Contents"
 APP_MACOS_DIR="${APP_CONTENTS_DIR}/MacOS"
 APP_RESOURCES_DIR="${APP_CONTENTS_DIR}/Resources"
+APP_FRAMEWORKS_DIR="${APP_CONTENTS_DIR}/Frameworks"
 APP_PAYLOAD_DIR="${APP_RESOURCES_DIR}/app"
 APP_LAUNCHER_NAME="wealthsimple-prospector-launcher"
 APP_LAUNCHER_PATH="${APP_MACOS_DIR}/${APP_LAUNCHER_NAME}"
@@ -36,6 +37,17 @@ APPLE_ID_VALUE="${APPLE_ID:-}"
 APPLE_TEAM_ID_VALUE="${APPLE_TEAM_ID:-2H56V7T355}"
 APPLE_APP_PASSWORD_VALUE="${APPLE_APP_PASSWORD:-}"
 SKIP_NOTARIZATION="${WSP_SKIP_NOTARIZATION:-0}"
+SPARKLE_ENABLED="${WSP_ENABLE_SPARKLE:-1}"
+SPARKLE_VERSION="${WSP_SPARKLE_VERSION:-2.9.0}"
+SPARKLE_FEED_URL="${WSP_SPARKLE_FEED_URL:-https://christomitov.github.io/ws-prospector/appcast.xml}"
+SPARKLE_PUBLIC_KEY="${WSP_SPARKLE_PUBLIC_KEY:-}"
+SPARKLE_FRAMEWORK_SOURCE="${WSP_SPARKLE_FRAMEWORK_SOURCE:-}"
+SPARKLE_CACHE_DIR="${ROOT_DIR}/.build/sparkle"
+DMG_CREATED=0
+
+if [[ "$SPARKLE_ENABLED" == "1" && -z "$SPARKLE_PUBLIC_KEY" ]]; then
+  echo "==> Warning: WSP_SPARKLE_PUBLIC_KEY is empty. Sparkle will be embedded, but update checks are disabled until key is set."
+fi
 
 codesign_retry() {
   local attempts=0
@@ -50,6 +62,48 @@ codesign_retry() {
     fi
     sleep 1
   done
+}
+
+download_sparkle_framework() {
+  if [[ "$SPARKLE_ENABLED" != "1" ]]; then
+    return
+  fi
+
+  mkdir -p "$APP_FRAMEWORKS_DIR" "$SPARKLE_CACHE_DIR"
+
+  local framework_source="$SPARKLE_FRAMEWORK_SOURCE"
+  if [[ -z "$framework_source" ]]; then
+    local archive_name="Sparkle-${SPARKLE_VERSION}.tar.xz"
+    local archive_path="${SPARKLE_CACHE_DIR}/${archive_name}"
+    local extract_dir="${SPARKLE_CACHE_DIR}/Sparkle-${SPARKLE_VERSION}"
+    local download_url="https://github.com/sparkle-project/Sparkle/releases/download/${SPARKLE_VERSION}/${archive_name}"
+
+    if [[ ! -f "$archive_path" ]]; then
+      echo "==> Downloading Sparkle ${SPARKLE_VERSION}..."
+      curl -fsSL "$download_url" -o "$archive_path"
+    fi
+
+    rm -rf "$extract_dir"
+    mkdir -p "$extract_dir"
+    tar -xJf "$archive_path" -C "$extract_dir"
+
+    framework_source="$(find "$extract_dir" -type d -path "*/Sparkle.xcframework/macos-arm64_x86_64/Sparkle.framework" -print -quit)"
+    if [[ -z "$framework_source" ]]; then
+      framework_source="$(find "$extract_dir" -type d -path "*/Sparkle.xcframework/macos-*/Sparkle.framework" -print -quit)"
+    fi
+    if [[ -z "$framework_source" ]]; then
+      framework_source="$(find "$extract_dir" -type d -name "Sparkle.framework" -print -quit)"
+    fi
+  fi
+
+  if [[ -z "$framework_source" || ! -d "$framework_source" ]]; then
+    echo "Error: Sparkle.framework not found (set WSP_SPARKLE_FRAMEWORK_SOURCE to override)." >&2
+    exit 1
+  fi
+
+  echo "==> Embedding Sparkle.framework..."
+  rm -rf "${APP_FRAMEWORKS_DIR}/Sparkle.framework"
+  cp -R "$framework_source" "${APP_FRAMEWORKS_DIR}/Sparkle.framework"
 }
 
 if ! command -v uv >/dev/null 2>&1; then
@@ -85,7 +139,21 @@ chmod +x "${DIST_APP_DIR}/start.command"
 
 echo "==> Creating .app bundle..."
 rm -rf "${APP_BUNDLE_PATH}"
-mkdir -p "${APP_MACOS_DIR}" "${APP_PAYLOAD_DIR}"
+mkdir -p "${APP_MACOS_DIR}" "${APP_PAYLOAD_DIR}" "${APP_FRAMEWORKS_DIR}"
+
+SPARKLE_PLIST_KEYS=""
+if [[ "$SPARKLE_ENABLED" == "1" ]]; then
+  SPARKLE_PLIST_KEYS+=$'  <key>SUEnableAutomaticChecks</key>\n  <true/>\n'
+  SPARKLE_PLIST_KEYS+=$'  <key>SUScheduledCheckInterval</key>\n  <integer>86400</integer>\n'
+  if [[ -n "$SPARKLE_FEED_URL" ]]; then
+    SPARKLE_PLIST_KEYS+=$'  <key>SUFeedURL</key>\n'
+    SPARKLE_PLIST_KEYS+="  <string>${SPARKLE_FEED_URL}</string>"$'\n'
+  fi
+  if [[ -n "$SPARKLE_PUBLIC_KEY" ]]; then
+    SPARKLE_PLIST_KEYS+=$'  <key>SUPublicEDKey</key>\n'
+    SPARKLE_PLIST_KEYS+="  <string>${SPARKLE_PUBLIC_KEY}</string>"$'\n'
+  fi
+fi
 
 cat > "${APP_CONTENTS_DIR}/Info.plist" <<EOF
 <?xml version="1.0" encoding="UTF-8"?>
@@ -114,15 +182,21 @@ cat > "${APP_CONTENTS_DIR}/Info.plist" <<EOF
   <string>12.0</string>
   <key>NSHighResolutionCapable</key>
   <true/>
+${SPARKLE_PLIST_KEYS}
 </dict>
 </plist>
 EOF
 
 cp -R "${DIST_APP_DIR}/." "${APP_PAYLOAD_DIR}/"
+download_sparkle_framework
 
 if command -v xcrun >/dev/null 2>&1 && xcrun --find swiftc >/dev/null 2>&1; then
   echo "==> Compiling native macOS launcher..."
-  xcrun swiftc -O -framework Cocoa "${LAUNCHER_SOURCE}" -o "${APP_LAUNCHER_PATH}"
+  if [[ "$SPARKLE_ENABLED" == "1" ]]; then
+    xcrun swiftc -O -framework Cocoa -F "${APP_FRAMEWORKS_DIR}" -framework Sparkle "${LAUNCHER_SOURCE}" -o "${APP_LAUNCHER_PATH}"
+  else
+    xcrun swiftc -O -framework Cocoa "${LAUNCHER_SOURCE}" -o "${APP_LAUNCHER_PATH}"
+  fi
 else
   echo "==> swiftc not found; falling back to shell launcher."
   cat > "${APP_LAUNCHER_PATH}" <<'SH'
@@ -184,7 +258,7 @@ else
   HAVE_NOTARY_PROFILE=0
 fi
 
-if [[ "$HAVE_NOTARY_PROFILE" -eq 0 ]] && [[ -n "$APPLE_ID_VALUE" ]] && [[ -n "$APPLE_APP_PASSWORD_VALUE" ]]; then
+if [[ "$SKIP_NOTARIZATION" != "1" ]] && [[ "$HAVE_NOTARY_PROFILE" -eq 0 ]] && [[ -n "$APPLE_ID_VALUE" ]] && [[ -n "$APPLE_APP_PASSWORD_VALUE" ]]; then
   echo "==> Creating notarytool profile '${NOTARY_PROFILE}' from environment..."
   xcrun notarytool store-credentials "$NOTARY_PROFILE" \
     --apple-id "$APPLE_ID_VALUE" \
@@ -192,7 +266,7 @@ if [[ "$HAVE_NOTARY_PROFILE" -eq 0 ]] && [[ -n "$APPLE_ID_VALUE" ]] && [[ -n "$A
     --password "$APPLE_APP_PASSWORD_VALUE"
 fi
 
-if xcrun notarytool history --keychain-profile "$NOTARY_PROFILE" >/dev/null 2>&1; then
+if [[ "$HAVE_NOTARY_PROFILE" -eq 1 ]]; then
   echo "==> Creating DMG for notarization..."
   DMG_STAGING_DIR="$(mktemp -d)"
   cp -R "${APP_BUNDLE_PATH}" "${DMG_STAGING_DIR}/${APP_BUNDLE_NAME}"
@@ -204,6 +278,7 @@ if xcrun notarytool history --keychain-profile "$NOTARY_PROFILE" >/dev/null 2>&1
     -ov \
     -format UDZO \
     "$DMG_PATH" >/dev/null
+  DMG_CREATED=1
   rm -rf "$DMG_STAGING_DIR"
 
   echo "==> Submitting DMG for notarization (profile: ${NOTARY_PROFILE})..."
@@ -228,6 +303,6 @@ echo "Build complete:"
 echo "  App bundle: ${APP_BUNDLE_PATH}"
 echo "  Runtime payload: ${DIST_APP_DIR}"
 echo "  Release zip: ${ZIP_PATH}"
-if [[ -f "$DMG_PATH" ]]; then
+if [[ "$DMG_CREATED" -eq 1 ]]; then
   echo "  Notarized DMG: ${DMG_PATH}"
 fi
