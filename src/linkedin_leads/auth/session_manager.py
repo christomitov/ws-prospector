@@ -94,7 +94,7 @@ class SessionManager:
             self._status = await asyncio.to_thread(_do_login)
         return self._status
 
-    async def check_status(self) -> SessionStatus:
+    async def check_status(self, *, log_errors: bool = True) -> SessionStatus:
         """Check whether the saved session is still valid.
 
         Fetches /feed/ headlessly — if LinkedIn redirects to /login,
@@ -121,7 +121,10 @@ class SessionManager:
                     return SessionStatus.connected
                 return SessionStatus.expired
             except Exception:
-                logger.exception("Session check failed")
+                if log_errors:
+                    logger.exception("Session check failed")
+                else:
+                    logger.debug("Session check failed", exc_info=True)
                 return SessionStatus.unknown
 
         async with browser_lock:

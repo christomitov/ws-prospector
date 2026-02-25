@@ -1,10 +1,11 @@
 """CLI utility for diagnostics and data collection without the web UI.
 
 Examples:
+  wealthsimple-prospector cli status
+  wealthsimple-prospector cli search --query "founder"
+  wealthsimple-prospector cli collect --query "founder" --source linkedin_search
+  wealthsimple-prospector cli collect --sales-url "https://www.linkedin.com/sales/search/people?..."
   uv run ws-prospector-debug status
-  uv run ws-prospector-debug search --query "founder"
-  uv run ws-prospector-debug collect --query "founder" --source sales_navigator
-  uv run ws-prospector-debug collect --sales-url "https://www.linkedin.com/sales/search/people?..."
 """
 
 from __future__ import annotations
@@ -17,16 +18,30 @@ import json
 import logging
 import os
 import re
+import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
 from .config import DATA_DIR, ensure_dirs
 from .run_labels import summarize_request, summarize_url
 
-logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
+logging.basicConfig(level=logging.WARNING, format="%(levelname)s: %(message)s")
 logger = logging.getLogger(__name__)
 
 DEBUG_HTML_DIR = DATA_DIR / "debug_html"
+
+
+def _detect_prog() -> str:
+    argv0 = Path(sys.argv[0]).name
+    if argv0 == "wealthsimple-prospector":
+        return "wealthsimple-prospector cli"
+    if argv0 in {"ws-prospector-debug", "ws-prospector-cli", "li-leads-debug", "li-leads-cli"}:
+        return argv0
+    return "wealthsimple-prospector cli"
+
+
+def _status_hint() -> str:
+    return "wealthsimple-prospector cli status (or local: uv run ws-prospector-debug status)"
 
 
 def validate_collect_mode(args: argparse.Namespace) -> tuple[bool, str | None]:
@@ -40,11 +55,39 @@ def validate_collect_mode(args: argparse.Namespace) -> tuple[bool, str | None]:
     return True, None
 
 
-def cmd_status() -> None:
+def _configure_cli_logging(*, verbose: bool = False, debug: bool = False) -> None:
+    root = logging.getLogger()
+    if debug:
+        logging.disable(logging.NOTSET)
+        root.setLevel(logging.DEBUG)
+        return
+    if verbose:
+        logging.disable(logging.NOTSET)
+        root.setLevel(logging.INFO)
+        return
+    # Default to quiet output for agent/human CLI use.
+    logging.disable(logging.INFO)
+    root.setLevel(logging.WARNING)
+
+
+def _add_log_flags(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument(
+        "--verbose",
+        action="store_true",
+        help="Enable INFO logs from crawler/parsers.",
+    )
+    parser.add_argument(
+        "--debug",
+        action="store_true",
+        help="Enable DEBUG logs (very verbose).",
+    )
+
+
+def cmd_status(*, verbose: bool = False) -> None:
     from .auth.session_manager import SessionManager
 
     mgr = SessionManager()
-    status = asyncio.run(mgr.check_status())
+    status = asyncio.run(mgr.check_status(log_errors=verbose))
     print(f"Session: {status.value}")
 
 
@@ -105,7 +148,13 @@ def cmd_parse(page_num: int = 1) -> None:
         print(f"     Mutual:  {lead.mutual_connections}")
 
 
-def cmd_search(query: str, *, source: str = "linkedin_search", max_pages: int = 1) -> None:
+def cmd_search(
+    query: str,
+    *,
+    source: str = "linkedin_search",
+    max_pages: int = 1,
+    persist: bool = False,
+) -> None:
     from .auth.session_manager import SessionManager
     from .models import SearchRequest
     from .spiders.sales_nav import SalesNavigatorSpider
@@ -133,9 +182,9 @@ def cmd_search(query: str, *, source: str = "linkedin_search", max_pages: int = 
         if lead.linkedin_url:
             print(f"     {lead.linkedin_url}")
 
-    if leads:
-        store = LeadStore()
-        store.upsert_many(leads)
+    if leads and persist:
+        lead_store = LeadStore()
+        lead_store.upsert_many(leads)
         print(f"\nSaved {len(leads)} leads to database.")
 
 
@@ -411,7 +460,7 @@ async def _collect_async(args: argparse.Namespace) -> int:
         status = await mgr.login()
 
     if status != SessionStatus.connected:
-        print("LinkedIn session is not connected. Run `ws-prospector-debug status` or `--login-if-needed`.")
+        print(f"LinkedIn session is not connected. Run `{_status_hint()}` or `--login-if-needed`.")
         return 2
 
     effective_max_pages = _resolve_collect_max_pages(args)
@@ -621,22 +670,29 @@ async def _collect_async(args: argparse.Namespace) -> int:
 
 
 def _build_parser() -> argparse.ArgumentParser:
+    prog = _detect_prog()
+    packaged = "wealthsimple-prospector cli"
+    local_dev = "uv run ws-prospector-debug"
     parser = argparse.ArgumentParser(
-        prog="ws-prospector-debug",
+        prog=prog,
         description="Debug + extraction CLI for Wealthsimple Prospector.",
         formatter_class=argparse.RawTextHelpFormatter,
     )
     sub = parser.add_subparsers(dest="command")
 
-    sub.add_parser("status", help="Check LinkedIn session status.")
+    status = sub.add_parser("status", help="Check LinkedIn session status.")
+    _add_log_flags(status)
 
     html = sub.add_parser("html", help="Summarize saved debug HTML page.")
+    _add_log_flags(html)
     html.add_argument("page", nargs="?", type=int, default=1, help="Page number in debug_html/page_<N>.html")
 
     parse = sub.add_parser("parse", help="Parse a saved debug HTML page with search parser.")
+    _add_log_flags(parse)
     parse.add_argument("page", nargs="?", type=int, default=1, help="Page number in debug_html/page_<N>.html")
 
     search = sub.add_parser("search", help="Run one-off search scrape and print/store leads.")
+    _add_log_flags(search)
     search.add_argument("--query", required=True, help="Search query string.")
     search.add_argument(
         "--source",
@@ -645,6 +701,11 @@ def _build_parser() -> argparse.ArgumentParser:
         help="Search source when using --query (default: linkedin_search).",
     )
     search.add_argument("--max-pages", type=int, default=1, help="Max pages to scrape (1-100).")
+    search.add_argument(
+        "--store",
+        action="store_true",
+        help="Upsert found leads into SQLite leads table.",
+    )
 
     collect = sub.add_parser(
         "collect",
@@ -658,21 +719,22 @@ def _build_parser() -> argparse.ArgumentParser:
         formatter_class=argparse.RawTextHelpFormatter,
         epilog=(
             "Examples:\n"
-            "  ws-prospector-debug collect --query \"founder\" --source linkedin_search --max-pages 3\n"
-            "  ws-prospector-debug collect --sales-url \"https://www.linkedin.com/sales/search/people?...\"\n"
-            "  ws-prospector-debug collect --query \"head of partnerships\" --json-out out/leads.json --csv-out out/leads.csv\n\n"
+            f"  {packaged} collect --query \"founder\" --source linkedin_search --max-pages 3\n"
+            f"  {packaged} collect --sales-url \"https://www.linkedin.com/sales/search/people?...\"\n"
+            f"  {packaged} collect --query \"head of partnerships\" --json-out out/leads.json --csv-out out/leads.csv\n"
+            f"  {local_dev} collect --query \"founder\" --source linkedin_search --max-pages 3\n\n"
             "Concurrency note:\n"
             "  - Run collect jobs sequentially per machine/session.\n"
             "  - Parallel collect runs share one Chromium user-data directory and can fail with profile lock errors.\n\n"
             "Agent-first (no files):\n"
-            "  ws-prospector-debug collect --sales-url \"https://www.linkedin.com/sales/search/people?...\" --stdout json\n"
-            "  ws-prospector-debug collect --query \"wealth advisor toronto\" --stdout json --fast\n\n"
+            f"  {packaged} collect --sales-url \"https://www.linkedin.com/sales/search/people?...\" --stdout json\n"
+            f"  {packaged} collect --query \"wealth advisor toronto\" --stdout json --fast\n\n"
             "Compact stdout (no jq reshape needed):\n"
-            "  ws-prospector-debug collect --query \"Vriti Panwar\" --person-query --stdout json --output-view compact --fast\n\n"
+            f"  {packaged} collect --query \"Vriti Panwar\" --person-query --stdout json --output-view compact --fast\n\n"
             "Person query mode (explicit single-profile):\n"
-            "  ws-prospector-debug collect --query \"Vriti Panwar\" --person-query --stdout json --fast\n\n"
+            f"  {packaged} collect --query \"Vriti Panwar\" --person-query --stdout json --fast\n\n"
             "Stream mode (low-latency for agents):\n"
-            "  ws-prospector-debug collect --query \"Christo Mitov\" --max-leads 3 --max-enriched 1 --stdout ndjson --output-view compact --fast\n\n"
+            f"  {packaged} collect --query \"Christo Mitov\" --max-leads 3 --max-enriched 1 --stdout ndjson --output-view compact --fast\n\n"
             "Output contract:\n"
             "  - JSON: array of records { run_id, lead, profile, collected_at }\n"
             "  - CSV: flattened columns for easy spreadsheet sharing\n"
@@ -684,6 +746,7 @@ def _build_parser() -> argparse.ArgumentParser:
             "    featured_posts, activity_posts, recent_posts"
         ),
     )
+    _add_log_flags(collect)
     mode = collect.add_mutually_exclusive_group(required=True)
     mode.add_argument("--query", help="Keywords to search for.")
     mode.add_argument("--sales-url", help="Sales Navigator people search URL.")
@@ -745,9 +808,9 @@ def _build_parser() -> argparse.ArgumentParser:
     collect.add_argument("--json-out", default="", help="Path for JSON output (default: auto timestamped file).")
     collect.add_argument("--csv-out", default="", help="Path for CSV output (default: auto timestamped file).")
     collect.add_argument(
-        "--no-store",
+        "--store",
         action="store_true",
-        help="Do not upsert collected leads into SQLite leads table.",
+        help="Upsert collected leads into SQLite leads table.",
     )
     collect.add_argument(
         "--login-if-needed",
@@ -793,8 +856,13 @@ def main() -> None:
         parser.print_help()
         return
 
+    _configure_cli_logging(
+        verbose=bool(getattr(args, "verbose", False)),
+        debug=bool(getattr(args, "debug", False)),
+    )
+
     if args.command == "status":
-        cmd_status()
+        cmd_status(verbose=bool(getattr(args, "verbose", False) or getattr(args, "debug", False)))
         return
     if args.command == "html":
         cmd_html(args.page)
@@ -804,7 +872,7 @@ def main() -> None:
         return
     if args.command == "search":
         max_pages = max(1, min(int(args.max_pages), 100))
-        cmd_search(args.query, source=args.source, max_pages=max_pages)
+        cmd_search(args.query, source=args.source, max_pages=max_pages, persist=bool(args.store))
         return
     if args.command == "collect":
         if args.max_pages is not None:
@@ -812,7 +880,6 @@ def main() -> None:
         args.max_leads = max(1, int(args.max_leads))
         args.max_enriched = max(0, int(args.max_enriched))
         args.max_posts = max(1, int(args.max_posts))
-        args.store = not args.no_store
         raise SystemExit(asyncio.run(_collect_async(args)))
 
     parser.print_help()

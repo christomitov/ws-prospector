@@ -5,6 +5,7 @@ import Sparkle
 
 final class LauncherAppDelegate: NSObject, NSApplicationDelegate {
     private let appURL = URL(string: "http://127.0.0.1:8000")!
+    private let updatesURL = URL(string: "https://github.com/christomitov/ws-prospector/releases/latest")!
     private var serverProcess: Process?
     private var lastDashboardOpenAt = Date.distantPast
     #if canImport(Sparkle)
@@ -64,14 +65,12 @@ final class LauncherAppDelegate: NSObject, NSApplicationDelegate {
 
     private func buildActionsMenu(includeKeyEquivalents: Bool) -> NSMenu {
         let menu = NSMenu()
-        #if canImport(Sparkle)
         menu.addItem(
             withTitle: "Check for Updates...",
             action: #selector(checkForUpdates(_:)),
             keyEquivalent: ""
         )
         menu.addItem(NSMenuItem.separator())
-        #endif
         menu.addItem(
             withTitle: "Open Dashboard",
             action: #selector(openDashboard(_:)),
@@ -108,8 +107,12 @@ final class LauncherAppDelegate: NSObject, NSApplicationDelegate {
 
     @objc private func checkForUpdates(_ sender: Any?) {
         #if canImport(Sparkle)
-        updaterController?.checkForUpdates(sender)
+        if let updaterController {
+            updaterController.checkForUpdates(sender)
+            return
+        }
         #endif
+        NSWorkspace.shared.open(updatesURL)
     }
 
     private func startServer() {
