@@ -69,6 +69,8 @@ Optional overrides:
 
 - `APPLE_SIGN_IDENTITY`: explicit signing identity.
 - `APPLE_NOTARY_PROFILE`: custom notarytool keychain profile name.
+- `WSP_APP_VERSION`: app version shown in Finder/Sparkle (default: `1.0.0`).
+- `WSP_APP_BUILD`: monotonically increasing build number for Sparkle (default: `1`).
 - `WSP_MACOS_DEPLOYMENT_TARGET`: minimum macOS version for the app binaries (default: `11.0`).
 - `WSP_ENABLE_SPARKLE`: set `1` (default) to embed Sparkle updater.
 - `WSP_SPARKLE_FEED_URL`: appcast URL (default: project GitHub Pages appcast).

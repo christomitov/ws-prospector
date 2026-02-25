@@ -25,6 +25,8 @@ APP_PAYLOAD_DIR="${APP_RESOURCES_DIR}/app"
 APP_LAUNCHER_NAME="wealthsimple-prospector-launcher"
 APP_LAUNCHER_PATH="${APP_MACOS_DIR}/${APP_LAUNCHER_NAME}"
 APP_BUNDLE_ID="${APPLE_BUNDLE_ID:-com.christo.wealthsimpleprospector}"
+APP_VERSION="${WSP_APP_VERSION:-1.0.0}"
+APP_BUILD="${WSP_APP_BUILD:-1}"
 LAUNCHER_SOURCE="scripts/macos_launcher.swift"
 NODE_ENTITLEMENTS_FILE="scripts/node_hardened_runtime.entitlements"
 ENTRY_FILE="scripts/pyinstaller_entry.py"
@@ -179,9 +181,9 @@ cat > "${APP_CONTENTS_DIR}/Info.plist" <<EOF
   <key>CFBundlePackageType</key>
   <string>APPL</string>
   <key>CFBundleShortVersionString</key>
-  <string>1.0.0</string>
+  <string>${APP_VERSION}</string>
   <key>CFBundleVersion</key>
-  <string>1</string>
+  <string>${APP_BUILD}</string>
   <key>LSMinimumSystemVersion</key>
   <string>${MACOS_DEPLOYMENT_TARGET}</string>
   <key>NSHighResolutionCapable</key>
@@ -197,10 +199,16 @@ download_sparkle_framework
 if command -v xcrun >/dev/null 2>&1 && xcrun --find swiftc >/dev/null 2>&1; then
   echo "==> Compiling native macOS launcher..."
   SWIFT_TARGET_TRIPLE="arm64-apple-macos${MACOS_DEPLOYMENT_TARGET}"
+  SWIFT_LINK_RPATH_ARGS=(
+    -Xlinker -rpath
+    -Xlinker "@executable_path/../Frameworks"
+    -Xlinker -rpath
+    -Xlinker "@loader_path/../Frameworks"
+  )
   if [[ "$SPARKLE_ENABLED" == "1" ]]; then
-    xcrun swiftc -O -target "${SWIFT_TARGET_TRIPLE}" -framework Cocoa -F "${APP_FRAMEWORKS_DIR}" -framework Sparkle "${LAUNCHER_SOURCE}" -o "${APP_LAUNCHER_PATH}"
+    xcrun swiftc -O -target "${SWIFT_TARGET_TRIPLE}" "${SWIFT_LINK_RPATH_ARGS[@]}" -framework Cocoa -F "${APP_FRAMEWORKS_DIR}" -framework Sparkle "${LAUNCHER_SOURCE}" -o "${APP_LAUNCHER_PATH}"
   else
-    xcrun swiftc -O -target "${SWIFT_TARGET_TRIPLE}" -framework Cocoa "${LAUNCHER_SOURCE}" -o "${APP_LAUNCHER_PATH}"
+    xcrun swiftc -O -target "${SWIFT_TARGET_TRIPLE}" "${SWIFT_LINK_RPATH_ARGS[@]}" -framework Cocoa "${LAUNCHER_SOURCE}" -o "${APP_LAUNCHER_PATH}"
   fi
 else
   echo "==> swiftc not found; falling back to shell launcher."
