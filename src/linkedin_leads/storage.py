@@ -215,6 +215,50 @@ class LeadStore:
             conn.execute("DELETE FROM leads")
         return {"leads_deleted": leads_deleted, "queue_deleted": queue_deleted}
 
+    def delete_leads(self, lead_ids: list[int]) -> dict:
+        """Delete specific leads and their connect queue entries."""
+        ids_set: set[int] = set()
+        for raw in lead_ids:
+            try:
+                parsed = int(raw)
+            except (TypeError, ValueError):
+                continue
+            if parsed > 0:
+                ids_set.add(parsed)
+        ids = sorted(ids_set)
+        if not ids:
+            return {"leads_deleted": 0, "queue_deleted": 0}
+
+        placeholders = ",".join("?" for _ in ids)
+        with self._connect() as conn:
+            url_rows = conn.execute(
+                f"SELECT linkedin_url FROM leads WHERE id IN ({placeholders}) AND linkedin_url IS NOT NULL",
+                ids,
+            ).fetchall()
+            urls = [row["linkedin_url"] for row in url_rows if row["linkedin_url"]]
+
+            queue_deleted = 0
+            if urls:
+                url_placeholders = ",".join("?" for _ in urls)
+                queue_deleted = conn.execute(
+                    f"""DELETE FROM connect_queue
+                        WHERE lead_id IN ({placeholders})
+                           OR linkedin_url IN ({url_placeholders})""",
+                    ids + urls,
+                ).rowcount
+            else:
+                queue_deleted = conn.execute(
+                    f"DELETE FROM connect_queue WHERE lead_id IN ({placeholders})",
+                    ids,
+                ).rowcount
+
+            leads_deleted = conn.execute(
+                f"DELETE FROM leads WHERE id IN ({placeholders})",
+                ids,
+            ).rowcount
+
+        return {"leads_deleted": leads_deleted, "queue_deleted": queue_deleted}
+
     # ── Connect Queue ─────────────────────────────────────────────────────
 
     def enqueue_connects(self, lead_ids: list[int], note: str | None = None) -> int:

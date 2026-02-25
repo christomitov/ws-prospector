@@ -14,6 +14,7 @@ This folder documents implemented behavior in `src/linkedin_leads`.
 2. [Sales Navigator URL Extractor](./sales-navigator.md)
 3. [Auto Connector](./auto-connector.md)
 4. [Data Model And Storage](./data-storage.md)
+5. [Release Process](./release-process.md)
 
 ## Notes
 

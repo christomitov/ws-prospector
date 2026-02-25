@@ -3,8 +3,13 @@
 from __future__ import annotations
 
 import asyncio
+import io
 import logging
+import os
 import webbrowser
+import zipfile
+from datetime import datetime, timedelta
+from logging.handlers import TimedRotatingFileHandler
 from pathlib import Path
 
 import uvicorn
@@ -13,7 +18,7 @@ from fastapi.responses import FileResponse, HTMLResponse, PlainTextResponse, Res
 from sse_starlette.sse import EventSourceResponse
 
 from .auth.session_manager import SessionManager
-from .config import HOST, PORT, ensure_dirs
+from .config import HOST, LOG_FILE, LOG_RETENTION_DAYS, LOG_DIR, PORT, ensure_dirs
 from .connect_worker import ConnectWorker
 from .models import LeadSource, SearchRequest
 from .spiders.company import CompanyEmployeesSpider
@@ -31,6 +36,44 @@ _session_mgr: SessionManager | None = None
 _store: LeadStore | None = None
 _active_search: dict | None = None
 _connect_worker: ConnectWorker | None = None
+
+
+def _list_log_files() -> list[Path]:
+    ensure_dirs()
+    files = [p for p in LOG_DIR.glob("server.log*") if p.is_file()]
+    return sorted(files, key=lambda p: p.stat().st_mtime, reverse=True)
+
+
+def _cleanup_old_logs() -> None:
+    cutoff = datetime.now() - timedelta(days=LOG_RETENTION_DAYS)
+    cutoff_ts = cutoff.timestamp()
+    for path in _list_log_files():
+        if path.stat().st_mtime < cutoff_ts:
+            try:
+                path.unlink(missing_ok=True)
+            except OSError:
+                logger.debug("Failed to delete old log file: %s", path)
+
+
+def _configure_logging() -> None:
+    ensure_dirs()
+    _cleanup_old_logs()
+    log_format = "%(asctime)s %(levelname)s %(name)s: %(message)s"
+    formatter = logging.Formatter(log_format)
+
+    stream_handler = logging.StreamHandler()
+    stream_handler.setFormatter(formatter)
+
+    file_handler = TimedRotatingFileHandler(
+        filename=str(LOG_FILE),
+        when="midnight",
+        interval=1,
+        backupCount=LOG_RETENTION_DAYS,
+        encoding="utf-8",
+    )
+    file_handler.setFormatter(formatter)
+
+    logging.basicConfig(level=logging.INFO, handlers=[stream_handler, file_handler], force=True)
 
 
 def _get_connect_worker() -> ConnectWorker:
@@ -258,6 +301,16 @@ async def clear_leads():
     return {"status": "ok", **deleted}
 
 
+@app.post("/api/leads/delete")
+async def delete_leads(body: dict):
+    lead_ids = body.get("lead_ids", [])
+    if not isinstance(lead_ids, list) or not lead_ids:
+        return {"error": "No lead_ids provided"}
+    store = _get_store()
+    deleted = store.delete_leads(lead_ids)
+    return {"status": "ok", **deleted}
+
+
 # ── Stats ─────────────────────────────────────────────────────────────────
 
 @app.get("/api/stats")
@@ -368,6 +421,69 @@ async def update_connect_settings(body: dict):
     return worker.update_settings(updates)
 
 
+@app.get("/api/settings/logs")
+async def get_log_settings():
+    _cleanup_old_logs()
+    files = _list_log_files()
+    return {
+        "retention_days": LOG_RETENTION_DAYS,
+        "total_size_bytes": sum(p.stat().st_size for p in files),
+        "files": [
+            {
+                "name": p.name,
+                "size_bytes": p.stat().st_size,
+                "modified_at": datetime.fromtimestamp(p.stat().st_mtime).astimezone().isoformat(),
+            }
+            for p in files
+        ],
+    }
+
+
+@app.get("/api/settings/logs/download")
+async def download_logs():
+    _cleanup_old_logs()
+    files = _list_log_files()
+    if not files:
+        return PlainTextResponse("No server logs available yet.", status_code=404)
+
+    archive_name = f"wealthsimple-prospector-logs-{datetime.now().strftime('%Y%m%d-%H%M%S')}.zip"
+    payload = io.BytesIO()
+    with zipfile.ZipFile(payload, mode="w", compression=zipfile.ZIP_DEFLATED) as zf:
+        for path in files:
+            zf.write(path, arcname=path.name)
+    payload.seek(0)
+    return Response(
+        content=payload.getvalue(),
+        media_type="application/zip",
+        headers={"Content-Disposition": f'attachment; filename="{archive_name}"'},
+    )
+
+
+@app.post("/api/settings/logs/clear")
+async def clear_logs():
+    ensure_dirs()
+    files = _list_log_files()
+    removed_archives = 0
+    truncated_current = False
+
+    for path in files:
+        if path == LOG_FILE:
+            path.write_text("", encoding="utf-8")
+            truncated_current = True
+        else:
+            path.unlink(missing_ok=True)
+            removed_archives += 1
+
+    if not LOG_FILE.exists():
+        LOG_FILE.touch()
+
+    return {
+        "status": "ok",
+        "removed_archives": removed_archives,
+        "truncated_current": truncated_current,
+    }
+
+
 # ── Debug ─────────────────────────────────────────────────────────────────
 
 @app.get("/api/debug/html/{page_num}")
@@ -385,8 +501,8 @@ async def debug_html(page_num: int):
 
 def main():
     """CLI entrypoint: start server and open browser."""
-    ensure_dirs()
-    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
+    _configure_logging()
     logger.info("Starting Wealthsimple Prospector at http://%s:%d", HOST, PORT)
-    webbrowser.open(f"http://{HOST}:{PORT}")
-    uvicorn.run(app, host=HOST, port=PORT, log_level="info")
+    if os.getenv("WSP_OPEN_BROWSER", "1") not in {"0", "false", "False"}:
+        webbrowser.open(f"http://{HOST}:{PORT}")
+    uvicorn.run(app, host=HOST, port=PORT, log_level="info", log_config=None)

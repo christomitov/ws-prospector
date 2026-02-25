@@ -16,6 +16,7 @@ Then read feature-specific docs:
 4. `docs/data-storage.md`
 5. `docs/API.md`
 6. `docs/architecture.md`
+7. `docs/release-process.md`
 
 ## Source Of Truth
 
@@ -39,3 +40,4 @@ Key implementation files:
 4. When changing extraction or URL detection behavior, update `docs/sales-navigator.md`.
 5. When endpoint contracts change, update `docs/API.md`.
 6. Prefer adding small tests for parser/storage/connector behavior changes.
+7. When release packaging or shipping steps change, update `docs/release-process.md`.

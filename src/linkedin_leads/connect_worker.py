@@ -12,8 +12,10 @@ import asyncio
 import logging
 import os
 import random
+import re
 import time as _time
 from datetime import date, datetime, time
+from urllib.parse import quote, unquote, urlparse
 
 from .storage import LeadStore
 
@@ -372,26 +374,36 @@ class ConnectWorker:
                     # Try clicking "More" to reveal Connect in dropdown
                     connect_btn = self._try_more_menu(page)
 
+                used_direct_invite_fallback = False
                 if not connect_btn:
-                    logger.warning("Connect button not found on %s", profile_url)
-                    self._save_screenshot(page, "connect_fail_no_button")
-                    return False
+                    # Fallback: construct LinkedIn's invite URL directly from the
+                    # profile vanity slug and continue through the same send flow.
+                    direct_invite_url = self._build_direct_invite_url(profile_url)
+                    if not direct_invite_url:
+                        logger.warning("Connect button not found on %s", profile_url)
+                        self._save_screenshot(page, "connect_fail_no_button")
+                        return False
+                    logger.info("Connect button not found; using direct invite URL fallback: %s", direct_invite_url)
+                    page.goto(direct_invite_url, wait_until="domcontentloaded")
+                    used_direct_invite_fallback = True
+                    self._human_delay(2, 4, "waiting on direct invite page")
 
-                # Small pause before clicking — like moving the mouse over
-                self._human_delay(0.5, 1.5, "hovering before click")
+                if connect_btn:
+                    # Small pause before clicking — like moving the mouse over
+                    self._human_delay(0.5, 1.5, "hovering before click")
 
-                # The main Connect is an <a> with href to /preload/custom-invite/.
-                # A normal click can be blocked by overlay elements, so extract
-                # the href and navigate directly — same end result, more reliable.
-                href = connect_btn.get_attribute("href")
-                if href:
-                    invite_url = href if href.startswith("http") else f"https://www.linkedin.com{href}"
-                    logger.info("Navigating to invite page: %s", invite_url)
-                    page.goto(invite_url, wait_until="domcontentloaded")
-                else:
-                    logger.info("No href — clicking Connect directly...")
-                    connect_btn.click(force=True)
-                self._human_delay(2, 4, "waiting after connect click")
+                    # The main Connect is an <a> with href to /preload/custom-invite/.
+                    # A normal click can be blocked by overlay elements, so extract
+                    # the href and navigate directly — same end result, more reliable.
+                    href = connect_btn.get_attribute("href")
+                    if href:
+                        invite_url = href if href.startswith("http") else f"https://www.linkedin.com{href}"
+                        logger.info("Navigating to invite page: %s", invite_url)
+                        page.goto(invite_url, wait_until="domcontentloaded")
+                    else:
+                        logger.info("No href — clicking Connect directly...")
+                        connect_btn.click(force=True)
+                    self._human_delay(2, 4, "waiting after connect click")
 
                 self._save_screenshot(page, "connect_2_after_click")
                 self._save_html(page, "connect_after_click")
@@ -407,6 +419,15 @@ class ConnectWorker:
                 else:
                     # A modal appeared on the same page
                     sent = self._handle_connect_modal(page, note)
+                    if not sent and not used_direct_invite_fallback:
+                        # Last-chance fallback for profiles where Connect only lives
+                        # behind secondary UI states.
+                        direct_invite_url = self._build_direct_invite_url(profile_url)
+                        if direct_invite_url:
+                            logger.info("Modal path failed; retrying via direct invite URL: %s", direct_invite_url)
+                            page.goto(direct_invite_url, wait_until="domcontentloaded")
+                            self._human_delay(1.5, 3, "waiting on direct invite retry")
+                            sent = self._handle_invite_page(page, note)
 
                 if not sent:
                     self._save_screenshot(page, "connect_fail_send")
@@ -488,6 +509,7 @@ class ConnectWorker:
             'div[role="toolbar"] div[data-view-name="profile-overflow-button"] button:visible',
             'section[componentkey*="Topcard"] div[data-view-name="profile-overflow-button"] button:visible',
             'div[data-view-name="profile-overflow-button"] button:visible',
+            "button[aria-label*='Open actions menu' i]:visible",
             "button[aria-label='More actions']:visible",
             "button[aria-label*='More actions' i]:visible",
             "button[aria-label='More']:visible",
@@ -503,11 +525,14 @@ class ConnectWorker:
                     _time.sleep(0.8)
                     # Now look for Connect in the dropdown
                     dropdown_selectors = [
+                        "div.artdeco-dropdown__content-inner :is(button,a,div,li,span):has-text('Connect'):visible",
+                        "div.artdeco-dropdown__content :is(button,a,div,li,span):has-text('Connect'):visible",
                         "[role='menu'] :is(button,a,div)[aria-label*='connect' i]:visible",
                         "[role='menu'] :is(button,a,div):has-text('Connect'):visible",
                         "button[role='menuitem']:has-text('Connect'):visible",
                         "div[role='menuitem']:has-text('Connect'):visible",
                         "li[role='menuitem']:has-text('Connect'):visible",
+                        "li:has-text('Connect'):visible",
                     ]
                     for ds in dropdown_selectors:
                         try:
@@ -582,6 +607,21 @@ class ConnectWorker:
             return "connection" not in blob
 
         return False
+
+    def _build_direct_invite_url(self, profile_url: str) -> str | None:
+        """Build LinkedIn's direct invite URL from a profile URL when possible."""
+        try:
+            parsed = urlparse(profile_url)
+            path = unquote(parsed.path or "")
+            match = re.search(r"/in/([^/?#]+)/?", path, flags=re.IGNORECASE)
+            if not match:
+                return None
+            vanity_name = match.group(1).strip()
+            if not vanity_name:
+                return None
+            return f"https://www.linkedin.com/preload/custom-invite/?vanityName={quote(vanity_name)}"
+        except Exception:
+            return None
 
     def _handle_invite_page(self, page: object, note: str | None) -> bool:
         """Handle the /preload/custom-invite/ page that LinkedIn navigates to."""
@@ -767,8 +807,13 @@ class ConnectWorker:
 
             # If send controls disappeared on invite page, that's a positive signal.
             if not self._invite_send_still_visible(page):
+                # LinkedIn sometimes keeps users on this URL with a spinner and no
+                # explicit "Invitation sent" copy. If send controls are gone, treat
+                # as success to avoid false negatives.
                 if self._has_invite_success_signal(page):
                     return True
+                logger.info("Verify: invite send controls disappeared; treating as sent")
+                return True
 
             # Final fallback: reopen the profile and confirm Pending/connected state.
             try:

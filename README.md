@@ -27,7 +27,7 @@ uv run ws-prospector-debug html 1
 uv run ws-prospector-debug parse 1
 ```
 
-## Build Release Zip (PyInstaller)
+## Build Release (Signed Zip + Optional Notarized DMG)
 
 Build a shareable macOS zip your friend can run without installing Python/uv:
 
@@ -37,13 +37,44 @@ Build a shareable macOS zip your friend can run without installing Python/uv:
 
 Output:
 
+- `dist/Wealthsimple Prospector.app`
 - `dist/wealthsimple-prospector-macos.zip`
+- `dist/wealthsimple-prospector-macos.dmg` (only when notarization is configured)
+
+Notarization setup (one time, easiest path):
+
+1. Copy `.env.example` to `.env`.
+2. Fill `APPLE_ID` + `APPLE_APP_PASSWORD` (Apple app-specific password).
+3. Run `./scripts/build_release.sh`.
+
+The script will auto-create the `ws-notary` keychain profile if missing.
+
+Manual setup alternative:
+
+```bash
+xcrun notarytool store-credentials "ws-notary" \
+  --apple-id "<your-apple-id>" \
+  --team-id "2H56V7T355"
+```
+
+Then run the same build command. The script will:
+
+1. Build PyInstaller output.
+2. Wrap it in a native `.app` bundle.
+3. Sign binaries with your `Developer ID Application` cert.
+4. Create the zip.
+5. Create, submit, and staple a DMG notarization ticket (if `ws-notary` exists).
+
+Optional overrides:
+
+- `APPLE_SIGN_IDENTITY`: explicit signing identity.
+- `APPLE_NOTARY_PROFILE`: custom notarytool keychain profile name.
 
 Friend flow:
 
-1. Unzip.
-2. Double-click `start.command`.
-3. Open `http://127.0.0.1:8000`.
+1. Open the `.dmg`.
+2. Drag `Wealthsimple Prospector.app` to Applications.
+3. Launch `Wealthsimple Prospector.app`.
 
 Notes:
 
@@ -55,3 +86,4 @@ Notes:
 Start here:
 
 - [Documentation Index](docs/README.md)
+- [Release Process](docs/release-process.md)
