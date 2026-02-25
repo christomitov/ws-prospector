@@ -1,118 +1,55 @@
-# Wealthsimple Prospector
+# Wealthsimple Prospector Monorepo
 
-Wealthsimple Prospector is a local lead discovery app with a web UI and API.
+This repository contains two related products:
 
-Supported functionality:
+1. `src/linkedin_leads` — Python app (local web UI + API + scraping/connector CLI).
+2. `apps/extension` — browser extension app.
+
+The goal is to keep lead collection workflows, extension work, and shared docs in one place while keeping each app isolated.
+
+## What The Python App Does
 
 1. LinkedIn people search extraction.
 2. Sales Navigator extraction (including pasted Sales Nav URLs).
 3. Company people extraction.
-4. Lead storage/export.
+4. Lead storage/export (SQLite + CSV/JSON).
 5. Queue-based auto connector.
+6. CLI collection flow for agent-driven enrichment (`collect` command).
 
-## Run Locally
+## Repo Layout
+
+- `src/linkedin_leads/` — Python application source.
+- `apps/extension/` — extension source, docs, and build config.
+- `docs/` — Python app docs (API, architecture, release process).
+- `skills/` — agent skills (including collector skill instructions).
+
+## Quick Start (Python App)
 
 ```bash
 uv sync
 uv run ws-prospector
 ```
 
-Open `http://127.0.0.1:8000`.
+Open: `http://127.0.0.1:8000`
 
-Debug CLI:
+## CLI (Agent-Friendly)
+
+Run from repo root with `uv run` (no global PATH dependency):
 
 ```bash
 uv run ws-prospector-debug status
-uv run ws-prospector-debug html 1
-uv run ws-prospector-debug parse 1
 uv run ws-prospector-debug collect --query "founder" --source sales_navigator --max-pages 3
-uv run ws-prospector-debug collect --sales-url "https://www.linkedin.com/sales/search/people?..." --csv-out leads.csv --json-out leads.json
+uv run ws-prospector-debug collect --sales-url "https://www.linkedin.com/sales/search/people?..." --json-out out/leads.json --csv-out out/leads.csv
 ```
 
-The `collect` command outputs structured JSON plus flattened CSV (for Sheets).
-It can also enrich each lead by visiting profile pages and extracting About,
-experience, education, and recent activity text.
+`collect` outputs:
 
-## Build Release (Signed Zip + Optional Notarized DMG)
+1. Structured JSON for downstream LLM qualification.
+2. Flattened CSV for Google Sheets/manual sharing.
 
-Build a shareable macOS zip your friend can run without installing Python/uv:
+## Extension Workflows
 
-```bash
-./scripts/build_release.sh
-```
-
-Output:
-
-- `dist/Wealthsimple Prospector.app`
-- `dist/wealthsimple-prospector-macos.zip`
-- `dist/wealthsimple-prospector-macos.dmg` (only when notarization is configured)
-
-Notarization setup (one time, easiest path):
-
-1. Copy `.env.example` to `.env`.
-2. Fill `APPLE_ID` + `APPLE_APP_PASSWORD` (Apple app-specific password).
-3. Run `./scripts/build_release.sh`.
-
-The script will auto-create the `ws-notary` keychain profile if missing.
-
-Manual setup alternative:
-
-```bash
-xcrun notarytool store-credentials "ws-notary" \
-  --apple-id "<your-apple-id>" \
-  --team-id "2H56V7T355"
-```
-
-Then run the same build command. The script will:
-
-1. Build PyInstaller output.
-2. Wrap it in a native `.app` bundle.
-3. Sign binaries with your `Developer ID Application` cert.
-4. Create the zip.
-5. Create, submit, and staple a DMG notarization ticket (if `ws-notary` exists).
-
-Optional overrides:
-
-- `APPLE_SIGN_IDENTITY`: explicit signing identity.
-- `APPLE_NOTARY_PROFILE`: custom notarytool keychain profile name.
-- `WSP_APP_VERSION`: app version shown in Finder/Sparkle (default: `1.0.0`).
-- `WSP_APP_BUILD`: monotonically increasing build number for Sparkle (default: `1`).
-- `WSP_MACOS_DEPLOYMENT_TARGET`: minimum macOS version for the app binaries (default: `11.0`).
-- `WSP_ENABLE_SPARKLE`: set `1` (default) to embed Sparkle updater.
-- `WSP_SPARKLE_FEED_URL`: appcast URL (default: project GitHub Pages appcast).
-- `WSP_SPARKLE_PUBLIC_KEY`: Sparkle `SUPublicEDKey` value.
-
-Friend flow:
-
-1. Open the `.dmg`.
-2. Drag `Wealthsimple Prospector.app` to Applications.
-3. Launch `Wealthsimple Prospector.app`.
-
-Notes:
-
-1. Chrome must be installed on the target machine.
-2. Build on the same architecture as the target machine (Apple Silicon vs Intel).
-3. Use a low `WSP_MACOS_DEPLOYMENT_TARGET` (default `11.0`) for broad macOS support.
-
-## Docs
-
-Start here:
-
-- [Documentation Index](docs/README.md)
-- [Release Process](docs/release-process.md)
-
-## Monorepo Layout
-
-This repo now includes the browser extension code at:
-
-- `apps/extension`
-
-Root workspace helper files:
-
-- `pnpm-workspace.yaml`
-- `package.json` (extension convenience scripts)
-
-Run extension tasks from repo root:
+From repo root:
 
 ```bash
 pnpm ext:dev
@@ -121,8 +58,24 @@ pnpm ext:test
 pnpm ext:lint
 ```
 
-## Auto Updates (Sparkle)
+Or run commands directly inside `apps/extension`.
 
-The native launcher embeds Sparkle when `WSP_ENABLE_SPARKLE=1`.
-To enable actual update checks, set `WSP_SPARKLE_PUBLIC_KEY` in `.env` and keep
-`appcast.xml` published on GitHub Pages.
+## Documentation
+
+Start here:
+
+- [Documentation Index](docs/README.md)
+- [API Reference](docs/API.md)
+- [Architecture](docs/architecture.md)
+- [Release Process](docs/release-process.md)
+
+Extension-specific docs:
+
+- [Extension Docs](apps/extension/docs/README.md)
+
+## Release Notes
+
+The root README intentionally stays focused on development usage.
+For macOS packaging, signing, notarization, and Sparkle updater details, use:
+
+- [Release Process](docs/release-process.md)
