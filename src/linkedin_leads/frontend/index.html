@@ -504,11 +504,26 @@
           <p class="text-xs text-gray-500 mb-3">
             Server logs are retained for <span x-text="logSettings.retention_days"></span> days and older files are auto-deleted.
           </p>
-          <p class="text-xs text-gray-500 mb-4">
+          <p class="text-xs text-gray-500 mb-2">
             <span x-text="(logSettings.files || []).length"></span> files,
             <span x-text="formatBytes(logSettings.total_size_bytes || 0)"></span> total
           </p>
+          <p class="text-xs mb-3" :class="logStreamConnected ? 'text-green-700' : 'text-gray-500'">
+            Stream: <span x-text="logStreamConnected ? 'connected' : 'disconnected'"></span>
+            <template x-if="logStreamFileName">
+              <span> · file: <span class="font-mono" x-text="logStreamFileName"></span></span>
+            </template>
+          </p>
+
+          <div class="bg-gray-950 text-gray-100 rounded-md border border-gray-800 p-3 mb-4">
+            <pre x-ref="logStreamOutput" class="text-xs leading-5 whitespace-pre-wrap break-words font-mono max-h-64 overflow-y-auto" x-text="logStreamText || 'Waiting for log stream…'"></pre>
+          </div>
+
           <div class="flex flex-wrap gap-2">
+            <button @click="toggleLogStream()"
+                    class="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 text-sm">
+              <span x-text="logStreamConnected ? 'Pause Stream' : 'Resume Stream'"></span>
+            </button>
             <button @click="downloadLogs()" :disabled="logsBusy"
                     class="px-4 py-2 bg-gray-800 text-white rounded-md hover:bg-gray-900 text-sm disabled:opacity-60">
               <span x-show="!logsBusy">Download Debug Logs</span>
@@ -534,6 +549,11 @@
         searching: false,
         settingsSaving: false,
         logsBusy: false,
+        logStreamConnected: false,
+        logStreamText: '',
+        logStreamFileName: '',
+        logStreamMaxLines: 400,
+        _logStreamSource: null,
         stats: {},
         urlInput: '',
         form: {
@@ -574,6 +594,7 @@
 
         async init() {
           window.addEventListener('hashchange', () => this.applyRoute());
+          window.addEventListener('beforeunload', () => this.stopLogStream());
           this.applyRoute();
           await this.checkSession();
           await this.loadStats();
@@ -582,6 +603,7 @@
         },
 
         applyRoute() {
+          const previousTab = this.tab;
           const hash = (window.location.hash || '#search/fields').replace('#', '');
           const [tabPart, modePart] = hash.split('/');
           const validTabs = ['search', 'results', 'connect', 'runs', 'settings'];
@@ -602,6 +624,11 @@
           if (this.tab === 'settings') {
             this.loadConnectSettings();
             this.loadLogSettings();
+            if (!this.logStreamConnected) {
+              this.startLogStream();
+            }
+          } else if (previousTab === 'settings') {
+            this.stopLogStream();
           }
         },
 
@@ -991,6 +1018,75 @@
           } catch {}
         },
 
+        _appendStreamLines(lines) {
+          if (!Array.isArray(lines) || lines.length === 0) return;
+          const current = this.logStreamText ? this.logStreamText.split('\n') : [];
+          current.push(...lines);
+          const max = Math.max(100, Number(this.logStreamMaxLines || 400));
+          if (current.length > max) {
+            this.logStreamText = current.slice(-max).join('\n');
+          } else {
+            this.logStreamText = current.join('\n');
+          }
+          this.$nextTick(() => {
+            const el = this.$refs.logStreamOutput;
+            if (el) el.scrollTop = el.scrollHeight;
+          });
+        },
+
+        startLogStream() {
+          if (this._logStreamSource) return;
+          const source = new EventSource('/api/settings/logs/stream?lines=120');
+          this._logStreamSource = source;
+
+          source.addEventListener('snapshot', (e) => {
+            try {
+              const payload = JSON.parse(e.data || '{}');
+              const lines = Array.isArray(payload.lines) ? payload.lines : [];
+              this.logStreamFileName = payload.file || this.logStreamFileName;
+              this.logStreamText = lines.join('\n');
+              this.logStreamConnected = true;
+              this.$nextTick(() => {
+                const el = this.$refs.logStreamOutput;
+                if (el) el.scrollTop = el.scrollHeight;
+              });
+            } catch {}
+          });
+
+          source.addEventListener('lines', (e) => {
+            try {
+              const payload = JSON.parse(e.data || '{}');
+              const lines = Array.isArray(payload.lines) ? payload.lines : [];
+              this.logStreamFileName = payload.file || this.logStreamFileName;
+              this.logStreamConnected = true;
+              this._appendStreamLines(lines);
+            } catch {}
+          });
+
+          source.onerror = () => {
+            this.logStreamConnected = false;
+            if (this._logStreamSource) {
+              this._logStreamSource.close();
+              this._logStreamSource = null;
+            }
+          };
+        },
+
+        stopLogStream() {
+          if (!this._logStreamSource) return;
+          this._logStreamSource.close();
+          this._logStreamSource = null;
+          this.logStreamConnected = false;
+        },
+
+        toggleLogStream() {
+          if (this.logStreamConnected || this._logStreamSource) {
+            this.stopLogStream();
+            return;
+          }
+          this.startLogStream();
+        },
+
         async loadLogSettings() {
           try {
             const res = await fetch('/api/settings/logs');
@@ -1033,6 +1129,7 @@
           try {
             const res = await fetch('/api/settings/logs/clear', { method: 'POST' });
             if (!res.ok) throw new Error('Failed');
+            this.logStreamText = '';
             await this.loadLogSettings();
             alert('Logs cleared.');
           } catch {

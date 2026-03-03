@@ -50,13 +50,17 @@ Connector pacing is configurable via environment variables:
 
 ## Send Flow
 
-1. Open profile URL.
-2. Skip when already pending/connected.
-3. Find connect action in profile header or fallback menu.
-4. Open invite path (direct URL or click).
-5. Send via invite page or modal.
-6. Verify post-send state.
-7. Mark queue row as `sent` or `failed`.
+1. Open queued LinkedIn URL (supports both `/in/...` and Sales Nav `/sales/lead/...`).
+2. For Sales Nav lead URLs, attempt to resolve/open canonical `/in/...` profile URL from page links first.
+3. Skip when already pending/connected.
+4. Find connect action in profile header or fallback More/overflow menu.
+5. On Sales Nav action bars, if Connect is only in overflow, optionally open `View LinkedIn profile` then retry Connect detection.
+6. Open invite path (direct URL or click).
+7. Send via invite page or modal.
+8. Verify post-send state.
+9. Mark queue row as `sent` or `failed`.
+
+Selector strategy is intentionally resilient for Ember-rendered UIs: prefer stable `aria-*` and `data-*` attributes/text over volatile `ember###` ids or generated class names.
 
 ## Debugging
 

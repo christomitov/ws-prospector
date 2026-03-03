@@ -218,6 +218,44 @@ Response:
 }
 ```
 
+## Settings
+
+### `GET /api/settings/connect`
+Returns persisted connector pacing settings.
+
+### `PUT /api/settings/connect`
+Updates connector pacing settings.
+
+Accepted fields:
+
+- `daily_limit`
+- `min_delay_seconds`
+- `max_delay_seconds`
+- `business_hours_only`
+- `biz_start_hour`
+- `biz_end_hour`
+
+### `GET /api/settings/logs`
+Returns log retention metadata and available `server.log*` files.
+
+### `GET /api/settings/logs/stream` (SSE)
+Streams live server logs for the web Settings tab.
+
+Query params:
+
+- `lines` (`20..1000`, default `120`) — initial tail lines sent in the first snapshot.
+
+SSE events:
+
+- `snapshot` — initial or rotated-file snapshot (`{ file, lines[] }`)
+- `lines` — appended log lines (`{ file, lines[] }`)
+
+### `GET /api/settings/logs/download`
+Downloads all retained `server.log*` files as a ZIP.
+
+### `POST /api/settings/logs/clear`
+Clears current log file and removes rotated archives.
+
 ## Debug Endpoint
 
 ### `GET /api/debug/html/{page_num}`

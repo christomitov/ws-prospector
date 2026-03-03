@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import io
+import json
 import logging
 import os
 import webbrowser
@@ -43,6 +44,29 @@ def _list_log_files() -> list[Path]:
     ensure_dirs()
     files = [p for p in LOG_DIR.glob("server.log*") if p.is_file()]
     return sorted(files, key=lambda p: p.stat().st_mtime, reverse=True)
+
+
+def _latest_log_file() -> Path:
+    files = _list_log_files()
+    if files:
+        return files[0]
+    ensure_dirs()
+    if not LOG_FILE.exists():
+        LOG_FILE.touch()
+    return LOG_FILE
+
+
+def _tail_log_lines(path: Path, *, max_lines: int = 200) -> list[str]:
+    if not path.exists() or not path.is_file():
+        return []
+    try:
+        text = path.read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return []
+    lines = text.splitlines()
+    if max_lines <= 0:
+        return []
+    return lines[-max_lines:]
 
 
 def _cleanup_old_logs() -> None:
@@ -504,6 +528,94 @@ async def get_log_settings():
             for p in files
         ],
     }
+
+
+@app.get("/api/settings/logs/stream")
+async def stream_logs(
+    request: Request,
+    lines: int = Query(default=120, ge=20, le=1000),
+):
+    """SSE stream of server log lines for Settings page live view."""
+    _cleanup_old_logs()
+
+    async def event_generator():
+        current_path = _latest_log_file()
+        snapshot = _tail_log_lines(current_path, max_lines=lines)
+        yield {
+            "event": "snapshot",
+            "data": json.dumps({"file": current_path.name, "lines": snapshot}),
+        }
+
+        try:
+            position = current_path.stat().st_size
+        except OSError:
+            position = 0
+
+        while True:
+            if await request.is_disconnected():
+                break
+
+            await asyncio.sleep(1)
+
+            latest_path = _latest_log_file()
+            if latest_path != current_path:
+                current_path = latest_path
+                snapshot = _tail_log_lines(current_path, max_lines=lines)
+                yield {
+                    "event": "snapshot",
+                    "data": json.dumps({"file": current_path.name, "lines": snapshot}),
+                }
+                try:
+                    position = current_path.stat().st_size
+                except OSError:
+                    position = 0
+                continue
+
+            if not current_path.exists():
+                continue
+
+            try:
+                file_size = current_path.stat().st_size
+            except OSError:
+                continue
+
+            # File was truncated (e.g. clear logs) — refresh snapshot.
+            if file_size < position:
+                position = 0
+                snapshot = _tail_log_lines(current_path, max_lines=lines)
+                yield {
+                    "event": "snapshot",
+                    "data": json.dumps({"file": current_path.name, "lines": snapshot}),
+                }
+                try:
+                    position = current_path.stat().st_size
+                except OSError:
+                    position = 0
+                if position == 0:
+                    continue
+
+            if file_size == position:
+                continue
+
+            try:
+                with current_path.open("r", encoding="utf-8", errors="replace") as handle:
+                    handle.seek(position)
+                    chunk = handle.read()
+                    position = handle.tell()
+            except OSError:
+                continue
+
+            if not chunk:
+                continue
+
+            delta_lines = chunk.splitlines()
+            if delta_lines:
+                yield {
+                    "event": "lines",
+                    "data": json.dumps({"file": current_path.name, "lines": delta_lines}),
+                }
+
+    return EventSourceResponse(event_generator())
 
 
 @app.get("/api/settings/logs/download")

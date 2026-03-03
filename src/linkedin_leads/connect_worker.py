@@ -15,7 +15,7 @@ import random
 import re
 import time as _time
 from datetime import date, datetime, time
-from urllib.parse import quote, unquote, urlparse
+from urllib.parse import quote, unquote, urljoin, urlparse
 
 from .storage import LeadStore
 
@@ -319,6 +319,75 @@ class ConnectWorker:
             logger.debug("Human delay (%.1fs) — %s", delay, label)
         _time.sleep(delay)
 
+    def _canonical_linkedin_url(self, url: str | None) -> str | None:
+        """Normalize a LinkedIn URL for connect workflows."""
+        if not url:
+            return None
+        raw = url.strip()
+        if not raw:
+            return None
+
+        try:
+            absolute = urljoin("https://www.linkedin.com", raw)
+            parsed = urlparse(absolute)
+            host = (parsed.netloc or "").lower()
+            if "linkedin.com" not in host:
+                return None
+            path = parsed.path.rstrip("/")
+            if not path:
+                return None
+            return f"https://www.linkedin.com{path}"
+        except Exception:
+            return None
+
+    def _extract_profile_url_from_candidates(self, hrefs: list[str | None]) -> str | None:
+        """Return the first canonical /in/ profile URL from candidate hrefs."""
+        for href in hrefs:
+            candidate = self._canonical_linkedin_url(href)
+            if candidate and "/in/" in candidate:
+                return candidate
+        return None
+
+    def _resolve_sales_nav_profile_url(self, page: object, original_url: str) -> str | None:
+        """Resolve a Sales Navigator lead URL to a standard /in/ profile URL."""
+        normalized = self._canonical_linkedin_url(original_url) or original_url
+        if "/sales/" not in normalized:
+            return normalized
+
+        current = self._canonical_linkedin_url(getattr(page, "url", ""))
+        if current and "/in/" in current:
+            return current
+
+        selectors = [
+            "a[data-anonymize='person-name'][href*='/in/']",
+            "a[href*='/in/']",
+            "a[data-control-name*='view_lead_panel_vanity_name'][href]",
+        ]
+        for sel in selectors:
+            try:
+                locator = page.locator(sel)
+                total = min(locator.count(), 8)
+                hrefs = [locator.nth(i).get_attribute("href") for i in range(total)]
+                candidate = self._extract_profile_url_from_candidates(hrefs)
+                if candidate:
+                    logger.info("Resolved Sales Nav URL to profile via selector %s: %s", sel, candidate)
+                    return candidate
+            except Exception:
+                continue
+
+        try:
+            html = page.content()
+            matches = re.findall(r"href=[\"']([^\"']*/in/[^\"'#?]+[^\"']*)[\"']", html, flags=re.IGNORECASE)
+            candidate = self._extract_profile_url_from_candidates(matches)
+            if candidate:
+                logger.info("Resolved Sales Nav URL to profile via HTML fallback: %s", candidate)
+                return candidate
+        except Exception:
+            logger.debug("Could not inspect Sales Nav HTML for profile links", exc_info=True)
+
+        logger.warning("Could not resolve Sales Nav lead URL to /in/ profile: %s", original_url)
+        return normalized
+
     def _do_connect(self, profile_url: str, note: str | None) -> bool:
         """Open profile page and click Connect using patchright directly.
 
@@ -343,10 +412,18 @@ class ConnectWorker:
             )
             try:
                 page = context.pages[0] if context.pages else context.new_page()
-                page.goto(profile_url, wait_until="domcontentloaded")
+                initial_url = self._canonical_linkedin_url(profile_url) or profile_url
+                page.goto(initial_url, wait_until="domcontentloaded")
 
                 # Wait for page to load like a real person would
                 self._human_delay(3, 5, "page load")
+
+                target_profile_url = self._resolve_sales_nav_profile_url(page, initial_url) or initial_url
+                current_normalized = self._canonical_linkedin_url(page.url)
+                if current_normalized and target_profile_url != current_normalized:
+                    logger.info("Opening resolved profile URL for connect flow: %s", target_profile_url)
+                    page.goto(target_profile_url, wait_until="domcontentloaded")
+                    self._human_delay(2, 4, "resolved profile page load")
 
                 # Scroll around to look natural — a person would read the profile
                 page.evaluate("window.scrollTo(0, 300)")
@@ -361,7 +438,7 @@ class ConnectWorker:
 
                 # Check if already connected / pending
                 if self._is_already_connected(page):
-                    logger.info("Already connected or pending — skipping %s", profile_url)
+                    logger.info("Already connected or pending — skipping %s", target_profile_url)
                     return True
 
                 # Dwell on the profile a bit before acting — like reading their headline
@@ -374,13 +451,24 @@ class ConnectWorker:
                     # Try clicking "More" to reveal Connect in dropdown
                     connect_btn = self._try_more_menu(page)
 
+                if not connect_btn:
+                    # Sales Navigator lead pages often hide the canonical profile
+                    # under "More" -> "View LinkedIn profile". Open it, then retry.
+                    opened_profile_url = self._open_profile_from_more_menu(page)
+                    if opened_profile_url:
+                        target_profile_url = opened_profile_url
+                        self._human_delay(1, 2.5, "landed on profile from More menu")
+                        connect_btn = self._find_connect_button(page)
+                        if not connect_btn:
+                            connect_btn = self._try_more_menu(page)
+
                 used_direct_invite_fallback = False
                 if not connect_btn:
                     # Fallback: construct LinkedIn's invite URL directly from the
                     # profile vanity slug and continue through the same send flow.
-                    direct_invite_url = self._build_direct_invite_url(profile_url)
+                    direct_invite_url = self._build_direct_invite_url(target_profile_url)
                     if not direct_invite_url:
-                        logger.warning("Connect button not found on %s", profile_url)
+                        logger.warning("Connect button not found on %s", target_profile_url)
                         self._save_screenshot(page, "connect_fail_no_button")
                         return False
                     logger.info("Connect button not found; using direct invite URL fallback: %s", direct_invite_url)
@@ -422,7 +510,7 @@ class ConnectWorker:
                     if not sent and not used_direct_invite_fallback:
                         # Last-chance fallback for profiles where Connect only lives
                         # behind secondary UI states.
-                        direct_invite_url = self._build_direct_invite_url(profile_url)
+                        direct_invite_url = self._build_direct_invite_url(target_profile_url)
                         if direct_invite_url:
                             logger.info("Modal path failed; retrying via direct invite URL: %s", direct_invite_url)
                             page.goto(direct_invite_url, wait_until="domcontentloaded")
@@ -437,11 +525,11 @@ class ConnectWorker:
                 self._save_screenshot(page, "connect_3_after_send")
 
                 # Verify: check we ended up somewhere that indicates success
-                if self._verify_sent(page, profile_url):
-                    logger.info("Verified: connection request sent to %s", profile_url)
+                if self._verify_sent(page, target_profile_url):
+                    logger.info("Verified: connection request sent to %s", target_profile_url)
                     return True
                 else:
-                    logger.warning("Could not verify connect was sent for %s", profile_url)
+                    logger.warning("Could not verify connect was sent for %s", target_profile_url)
                     self._save_screenshot(page, "connect_fail_verify")
                     return False
 
@@ -504,49 +592,175 @@ class ConnectWorker:
         return None
 
     def _try_more_menu(self, page: object) -> object | None:
-        """Click the '...' More button and look for Connect in the dropdown."""
+        """Click the '...' More/overflow button and look for Connect in the dropdown."""
         more_selectors = [
             'div[role="toolbar"] div[data-view-name="profile-overflow-button"] button:visible',
             'section[componentkey*="Topcard"] div[data-view-name="profile-overflow-button"] button:visible',
             'div[data-view-name="profile-overflow-button"] button:visible',
+            "button[data-x--lead-actions-bar-overflow-menu]:visible",
+            "button[aria-label*='Open actions overflow menu' i]:visible",
+            "button[aria-label*='overflow menu' i]:visible",
             "button[aria-label*='Open actions menu' i]:visible",
             "button[aria-label='More actions']:visible",
             "button[aria-label*='More actions' i]:visible",
             "button[aria-label='More']:visible",
             "button[aria-label*='More' i]:visible",
             "button:has(svg[id*='overflow']):visible",
+            "button:has-text('…'):visible",
+            "button:has-text('...'):visible",
         ]
         for sel in more_selectors:
             try:
                 more_btn = page.locator(sel).first
-                if more_btn.is_visible(timeout=2000):
-                    logger.info("Opening More menu via: %s", sel)
-                    more_btn.click(force=True)
-                    _time.sleep(0.8)
-                    # Now look for Connect in the dropdown
-                    dropdown_selectors = [
-                        "div.artdeco-dropdown__content-inner :is(button,a,div,li,span):has-text('Connect'):visible",
-                        "div.artdeco-dropdown__content :is(button,a,div,li,span):has-text('Connect'):visible",
-                        "[role='menu'] :is(button,a,div)[aria-label*='connect' i]:visible",
-                        "[role='menu'] :is(button,a,div):has-text('Connect'):visible",
-                        "button[role='menuitem']:has-text('Connect'):visible",
-                        "div[role='menuitem']:has-text('Connect'):visible",
-                        "li[role='menuitem']:has-text('Connect'):visible",
-                        "li:has-text('Connect'):visible",
-                    ]
-                    for ds in dropdown_selectors:
-                        try:
-                            item = page.locator(ds).first
-                            if item.is_visible(timeout=2000):
-                                if self._is_connect_action(item):
-                                    logger.info("Found Connect in More menu via: %s", ds)
-                                    return item
-                                logger.debug("Menu item matched but is not Connect: %s", ds)
-                        except Exception:
-                            continue
+                if not more_btn.is_visible(timeout=2000):
+                    continue
+                if not self._is_overflow_menu_button(more_btn):
+                    logger.debug("Skipping non-overflow button matched by %s", sel)
+                    continue
+
+                logger.info("Opening More/overflow menu via: %s", sel)
+                more_btn.click(force=True)
+                _time.sleep(0.8)
+
+                # Now look for Connect in the dropdown.
+                dropdown_selectors = [
+                    "div.artdeco-dropdown__content-inner :is(button,a,div,li,span):has-text('Connect'):visible",
+                    "div.artdeco-dropdown__content :is(button,a,div,li,span):has-text('Connect'):visible",
+                    "div.artdeco-dropdown__content-inner [role='menuitem']:has-text('Connect'):visible",
+                    "div.artdeco-dropdown__content [role='menuitem']:has-text('Connect'):visible",
+                    "[id^='hue-menu-'] :is(button,a,div,li,span):has-text('Connect'):visible",
+                    "[role='menu'] :is(button,a,div)[aria-label*='connect' i]:visible",
+                    "[role='menu'] :is(button,a,div):has-text('Connect'):visible",
+                    "button[role='menuitem']:has-text('Connect'):visible",
+                    "div[role='menuitem']:has-text('Connect'):visible",
+                    "li[role='menuitem']:has-text('Connect'):visible",
+                    "li:has-text('Connect'):visible",
+                ]
+                for ds in dropdown_selectors:
+                    try:
+                        item = page.locator(ds).first
+                        if item.is_visible(timeout=2000):
+                            if self._is_connect_action(item):
+                                logger.info("Found Connect in More menu via: %s", ds)
+                                return item
+                            logger.debug("Menu item matched but is not Connect: %s", ds)
+                    except Exception:
+                        continue
             except Exception:
                 continue
         return None
+
+    def _open_profile_from_more_menu(self, page: object) -> str | None:
+        """Open 'View LinkedIn profile' from More/overflow menu and return canonical /in/ URL."""
+        more_selectors = [
+            'div[role="toolbar"] div[data-view-name="profile-overflow-button"] button:visible',
+            'section[componentkey*="Topcard"] div[data-view-name="profile-overflow-button"] button:visible',
+            'div[data-view-name="profile-overflow-button"] button:visible',
+            "button[data-x--lead-actions-bar-overflow-menu]:visible",
+            "button[aria-label*='Open actions overflow menu' i]:visible",
+            "button[aria-label*='overflow menu' i]:visible",
+            "button[aria-label*='Open actions menu' i]:visible",
+            "button[aria-label*='More actions' i]:visible",
+            "button[aria-label*='More' i]:visible",
+            "button:has(svg[id*='overflow']):visible",
+            "button:has-text('…'):visible",
+            "button:has-text('...'):visible",
+        ]
+        profile_selectors = [
+            "div.artdeco-dropdown__content-inner a:has-text('View LinkedIn profile'):visible",
+            "div.artdeco-dropdown__content a:has-text('View LinkedIn profile'):visible",
+            "[id^='hue-menu-'] a:has-text('View LinkedIn profile'):visible",
+            "[id^='hue-menu-'] :is(a,button,div,li,span):has-text('View LinkedIn profile'):visible",
+            "[role='menu'] a:has-text('View LinkedIn profile'):visible",
+            "[role='menu'] :is(a,button,div,li,span):has-text('View LinkedIn profile'):visible",
+        ]
+
+        for more_sel in more_selectors:
+            try:
+                more_btn = page.locator(more_sel).first
+                if not more_btn.is_visible(timeout=1200):
+                    continue
+                if not self._is_overflow_menu_button(more_btn):
+                    logger.debug("Skipping non-overflow button matched by %s", more_sel)
+                    continue
+
+                logger.info("Opening More/overflow menu to find profile link via: %s", more_sel)
+                more_btn.click(force=True)
+                _time.sleep(0.8)
+
+                for profile_sel in profile_selectors:
+                    try:
+                        item = page.locator(profile_sel).first
+                        if not item.is_visible(timeout=1200):
+                            continue
+
+                        href = item.get_attribute("href")
+                        target = self._canonical_linkedin_url(href)
+                        if target and "/in/" in target:
+                            logger.info("Opening profile from More menu via href: %s", target)
+                            page.goto(target, wait_until="domcontentloaded")
+                            return target
+
+                        item.click(force=True)
+                        _time.sleep(1.5)
+                        current = self._canonical_linkedin_url(page.url)
+                        if current and "/in/" in current:
+                            logger.info("Opened profile from More menu via click: %s", current)
+                            return current
+                    except Exception:
+                        continue
+            except Exception:
+                continue
+
+        return None
+
+    def _looks_like_overflow_menu_button(
+        self,
+        aria_label: str | None,
+        text: str | None,
+        data_overflow_attr: str | None = None,
+        data_view_name: str | None = None,
+    ) -> bool:
+        """Return True when a button looks like the profile overflow menu trigger."""
+        aria = (aria_label or "").strip().lower()
+        text = (text or "").strip().lower()
+        data_overflow = (data_overflow_attr or "").strip().lower()
+        data_view = (data_view_name or "").strip().lower()
+
+        if data_overflow:
+            return True
+        if "profile-overflow-button" in data_view:
+            return True
+        if "overflow" in aria and "menu" in aria:
+            return True
+        if "more" in aria and "action" in aria:
+            return True
+
+        # Explicitly avoid frequent false positives in Sales Nav action bars.
+        negatives = ("save", "message", "inmail")
+        blob = f"{aria} {text}".strip()
+        if any(token in blob for token in negatives):
+            return False
+
+        if text in {"…", "..."}:
+            return True
+        return False
+
+    def _is_overflow_menu_button(self, el: object) -> bool:
+        try:
+            aria = el.get_attribute("aria-label") or ""
+        except Exception:
+            aria = ""
+        try:
+            data_overflow = el.get_attribute("data-x--lead-actions-bar-overflow-menu") or ""
+        except Exception:
+            data_overflow = ""
+        try:
+            data_view = el.get_attribute("data-view-name") or ""
+        except Exception:
+            data_view = ""
+        text = self._safe_inner_text(el)
+        return self._looks_like_overflow_menu_button(aria, text, data_overflow, data_view)
 
     def _is_connect_action(self, el: object) -> bool:
         """Check if a located element looks like a real Connect CTA."""

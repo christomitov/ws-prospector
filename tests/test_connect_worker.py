@@ -44,3 +44,18 @@ def test_looks_like_connect_action_rejects_message():
 def test_looks_like_connect_action_rejects_connections_word():
     worker = _worker()
     assert not worker._looks_like_connect_action("500+ connections", "Connections", "")
+
+
+def test_looks_like_overflow_menu_button_from_sales_nav_attr():
+    worker = _worker()
+    assert worker._looks_like_overflow_menu_button("", "", "", "profile-overflow-button")
+
+
+def test_looks_like_overflow_menu_button_from_overflow_aria():
+    worker = _worker()
+    assert worker._looks_like_overflow_menu_button("Open actions overflow menu", "", "", "")
+
+
+def test_looks_like_overflow_menu_button_rejects_save_button():
+    worker = _worker()
+    assert not worker._looks_like_overflow_menu_button("Save Mark Surman as a lead", "Save", "", "")
