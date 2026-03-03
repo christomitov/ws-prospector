@@ -97,13 +97,22 @@ final class LauncherAppDelegate: NSObject, NSApplicationDelegate {
             let publicKey = info["SUPublicEDKey"] as? String,
             !publicKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
         else {
+            NSLog("Sparkle updater disabled: missing SUFeedURL or SUPublicEDKey in Info.plist")
             return
         }
+
         updaterController = SPUStandardUpdaterController(
             startingUpdater: true,
             updaterDelegate: nil,
             userDriverDelegate: nil
         )
+        if updaterController == nil {
+            NSLog("Sparkle updater initialization failed; falling back to GitHub releases.")
+        } else {
+            NSLog("Sparkle updater initialized with feed URL: \(feedURL)")
+        }
+        #else
+        NSLog("Sparkle module unavailable at compile time; update checks will open GitHub releases.")
         #endif
     }
 
@@ -114,6 +123,7 @@ final class LauncherAppDelegate: NSObject, NSApplicationDelegate {
             return
         }
         #endif
+        NSLog("Check for Updates fallback: opening releases URL \(updatesURL.absoluteString)")
         NSWorkspace.shared.open(updatesURL)
     }
 

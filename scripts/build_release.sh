@@ -69,6 +69,11 @@ codesign_retry() {
   done
 }
 
+_sparkle_framework_has_modules() {
+  local path="$1"
+  [[ -f "$path/Modules/module.modulemap" || -f "$path/Versions/Current/Modules/module.modulemap" || -f "$path/Versions/B/Modules/module.modulemap" ]]
+}
+
 download_sparkle_framework() {
   if [[ "$SPARKLE_ENABLED" != "1" ]]; then
     return
@@ -96,6 +101,19 @@ download_sparkle_framework() {
     if [[ -z "$framework_source" ]]; then
       framework_source="$(find "$extract_dir" -type d -path "*/Sparkle.xcframework/macos-*/Sparkle.framework" -print -quit)"
     fi
+    if [[ -z "$framework_source" && -d "$extract_dir/Sparkle.framework" ]]; then
+      framework_source="$extract_dir/Sparkle.framework"
+    fi
+    if [[ -z "$framework_source" ]]; then
+      # Prefer frameworks that include Swift module maps. Some sample app
+      # bundles include runtime-only Sparkle.framework copies without Modules.
+      while IFS= read -r candidate; do
+        if _sparkle_framework_has_modules "$candidate"; then
+          framework_source="$candidate"
+          break
+        fi
+      done < <(find "$extract_dir" -type d -name "Sparkle.framework")
+    fi
     if [[ -z "$framework_source" ]]; then
       framework_source="$(find "$extract_dir" -type d -name "Sparkle.framework" -print -quit)"
     fi
@@ -106,7 +124,14 @@ download_sparkle_framework() {
     exit 1
   fi
 
-  echo "==> Embedding Sparkle.framework..."
+  if ! _sparkle_framework_has_modules "$framework_source"; then
+    echo "Error: Selected Sparkle.framework is missing Modules/module.modulemap:" >&2
+    echo "  $framework_source" >&2
+    echo "Set WSP_SPARKLE_FRAMEWORK_SOURCE to a full Sparkle.framework containing Modules/ and Headers/." >&2
+    exit 1
+  fi
+
+  echo "==> Embedding Sparkle.framework from: $framework_source"
   rm -rf "${APP_FRAMEWORKS_DIR}/Sparkle.framework"
   cp -R "$framework_source" "${APP_FRAMEWORKS_DIR}/Sparkle.framework"
 }
