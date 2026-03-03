@@ -3,6 +3,15 @@
     <channel>
         <title>Wealthsimple Prospector</title>
         <item>
+            <title>1.0.7</title>
+            <pubDate>Tue, 24 Feb 2026 22:11:02 -0500</pubDate>
+            <sparkle:version>8</sparkle:version>
+            <sparkle:shortVersionString>1.0.7</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>11.0</sparkle:minimumSystemVersion>
+            <sparkle:hardwareRequirements>arm64</sparkle:hardwareRequirements>
+            <enclosure url="https://github.com/christomitov/ws-prospector/releases/download/v1.0.7/wealthsimple-prospector-macos.dmg" length="80158449" type="application/octet-stream" sparkle:edSignature="uShB3BBLizzoFJ4unNix6yI1LnD5Yi+hG8d9LhbYsWT7YOM3BnHPIkECn2pz6kOw7muwnLpiLX7ya6EMBi2SAA=="/>
+        </item>
+        <item>
             <title>1.0.6</title>
             <pubDate>Tue, 24 Feb 2026 22:11:02 -0500</pubDate>
             <sparkle:version>7</sparkle:version>
@@ -19,15 +28,6 @@
             <sparkle:minimumSystemVersion>11.0</sparkle:minimumSystemVersion>
             <sparkle:hardwareRequirements>arm64</sparkle:hardwareRequirements>
             <enclosure url="https://github.com/christomitov/ws-prospector/releases/download/v1.0.5/wealthsimple-prospector-macos.dmg" length="80215791" type="application/octet-stream" sparkle:edSignature="tJqzW8QhcXHjM1mKUZOOWWjFmLZ9E2YhT2mkLe2iR/jecIoNlhcbKKO97IrHWa6Vn9OtDNInDUSFKmA/4x6JCg=="/>
-        </item>
-        <item>
-            <title>1.0.4</title>
-            <pubDate>Tue, 24 Feb 2026 22:11:02 -0500</pubDate>
-            <sparkle:version>5</sparkle:version>
-            <sparkle:shortVersionString>1.0.4</sparkle:shortVersionString>
-            <sparkle:minimumSystemVersion>11.0</sparkle:minimumSystemVersion>
-            <sparkle:hardwareRequirements>arm64</sparkle:hardwareRequirements>
-            <enclosure url="https://github.com/christomitov/ws-prospector/releases/download/v1.0.4/wealthsimple-prospector-macos.dmg" length="77492190" type="application/octet-stream" sparkle:edSignature="kQJ+I1m2JOZwaia7IriGW3AU1atM+PWryKsdh4+TG1djCwHeZvZU/ljD4jL4q6bmuuNghmHlkyTE2FFQxln/Cg=="/>
         </item>
         <item>
             <title>1.0.0</title>
