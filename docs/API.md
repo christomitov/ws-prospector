@@ -177,6 +177,28 @@ Notes:
 
 - `added` counts newly inserted queue rows and failed rows reset back to pending for retry.
 
+### `POST /api/connect/enqueue-url`
+Adds a person to the connect queue by LinkedIn URL. Creates or finds an existing lead automatically.
+Designed for cross-origin calls (e.g. from wealth_radar).
+
+Request:
+```json
+{
+  "linkedin_url": "https://www.linkedin.com/in/johndoe",
+  "full_name": "John Doe",
+  "note": "Optional note"
+}
+```
+
+Response:
+```json
+{
+  "added": 1,
+  "lead_id": 42,
+  "total_queued": 10
+}
+```
+
 ### Worker lifecycle
 
 - `POST /api/connect/start`
@@ -213,6 +235,23 @@ Response:
   "stats": {
     "pending": 0,
     "sent": 0,
+    "failed": 0
+  }
+}
+```
+
+### `DELETE /api/connect/queue`
+Clears connect queue rows. Defaults to clearing `pending` items.
+
+Optional query: `status=pending|sent|failed`
+
+Response:
+```json
+{
+  "deleted": 5,
+  "stats": {
+    "pending": 0,
+    "sent": 12,
     "failed": 0
   }
 }

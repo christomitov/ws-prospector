@@ -282,6 +282,24 @@ class LeadStore:
 
     # ── Connect Queue ─────────────────────────────────────────────────────
 
+    def upsert_lead_by_url(self, linkedin_url: str, full_name: str) -> int:
+        """Find or create a lead by LinkedIn URL. Returns the lead id."""
+        now = datetime.now(timezone.utc).isoformat()
+        # Normalize the URL to use as dedup key
+        dedup_key = linkedin_url.rstrip("/").lower()
+        with self._connect() as conn:
+            existing = conn.execute(
+                "SELECT id FROM leads WHERE dedup_key = ?", (dedup_key,)
+            ).fetchone()
+            if existing:
+                return existing["id"]
+            cur = conn.execute(
+                """INSERT INTO leads (dedup_key, linkedin_url, full_name, source, scraped_at)
+                   VALUES (?, ?, ?, 'wealth_radar', ?)""",
+                (dedup_key, linkedin_url, full_name, now),
+            )
+            return cur.lastrowid
+
     def enqueue_connects(self, lead_ids: list[int], note: str | None = None) -> int:
         """Add leads to the connect request queue.
 
@@ -370,6 +388,16 @@ class LeadStore:
         with self._connect() as conn:
             rows = conn.execute(sql, params).fetchall()
         return [dict(r) for r in rows]
+
+    def clear_connect_queue(self, status: str | None = None) -> int:
+        """Delete connect queue rows. If status is given, only delete that status; otherwise delete all pending."""
+        target = status or "pending"
+        with self._connect() as conn:
+            count = conn.execute(
+                "SELECT COUNT(*) FROM connect_queue WHERE status = ?", (target,)
+            ).fetchone()[0]
+            conn.execute("DELETE FROM connect_queue WHERE status = ?", (target,))
+        return count
 
     def connect_sent_count_for_local_day(self, target_day: date | None = None) -> int:
         """Count sent connect requests whose sent_at falls on the local calendar day."""

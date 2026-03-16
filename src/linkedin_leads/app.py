@@ -15,6 +15,7 @@ from pathlib import Path
 
 import uvicorn
 from fastapi import FastAPI, HTTPException, Query, Request
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, HTMLResponse, PlainTextResponse, Response
 from sse_starlette.sse import EventSourceResponse
 
@@ -32,6 +33,17 @@ from .run_labels import summarize_request, summarize_url
 logger = logging.getLogger(__name__)
 
 app = FastAPI(title="Wealthsimple Prospector", version="0.1.0")
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[
+        "https://radar.christomitov.com",
+        "http://localhost:4000",
+        "http://localhost:4001",
+    ],
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 # Singletons — initialized at startup
 _session_mgr: SessionManager | None = None
@@ -424,6 +436,29 @@ async def enqueue_connects(body: dict):
     return {"added": added, "total_queued": store.connect_queue_stats()["pending"]}
 
 
+@app.post("/api/connect/enqueue-url")
+async def enqueue_connect_by_url(body: dict):
+    """Add a person to the connect queue by LinkedIn URL.
+
+    Accepts: {linkedin_url, full_name, note?}
+    Creates or finds an existing lead, then enqueues it.
+    Designed for cross-origin calls from wealth_radar.
+    """
+    linkedin_url = (body.get("linkedin_url") or "").strip()
+    full_name = (body.get("full_name") or "").strip()
+    note = body.get("note")
+
+    if not linkedin_url:
+        raise HTTPException(status_code=422, detail="linkedin_url is required")
+    if not full_name:
+        raise HTTPException(status_code=422, detail="full_name is required")
+
+    store = _get_store()
+    lead_id = store.upsert_lead_by_url(linkedin_url, full_name)
+    added = store.enqueue_connects([lead_id], note=note)
+    return {"added": added, "lead_id": lead_id, "total_queued": store.connect_queue_stats()["pending"]}
+
+
 @app.post("/api/connect/retry")
 async def retry_connect(body: dict):
     """Retry a failed connect immediately by re-queueing and waking worker."""
@@ -487,6 +522,14 @@ async def connect_queue(status: str | None = None):
     store = _get_store()
     items = store.connect_queue_list(status=status)
     return {"queue": items, "stats": store.connect_queue_stats()}
+
+
+@app.delete("/api/connect/queue")
+async def clear_connect_queue(status: str | None = None):
+    """Clear connect queue rows. Defaults to clearing 'pending'. Pass ?status=failed to clear failed, etc."""
+    store = _get_store()
+    deleted = store.clear_connect_queue(status=status)
+    return {"deleted": deleted, "stats": store.connect_queue_stats()}
 
 
 # ── Settings ─────────────────────────────────────────────────────────────

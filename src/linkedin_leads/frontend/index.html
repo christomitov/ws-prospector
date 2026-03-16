@@ -308,6 +308,13 @@
             <option value="sent">Sent</option>
             <option value="failed">Failed</option>
           </select>
+          <div class="ml-auto">
+            <button @click="clearConnectQueue()"
+                    x-show="connectQueue.length > 0"
+                    class="px-3 py-1.5 text-sm border border-red-300 text-red-600 rounded-md hover:bg-red-50 transition">
+              Clear <span x-text="connectFilter ? formatStatus(connectFilter) : 'Pending'"></span>
+            </button>
+          </div>
         </div>
         <div class="overflow-x-auto">
           <table class="w-full text-sm">
@@ -988,6 +995,21 @@
             this.connectQueue = data.queue;
             this.connectStatus = { ...this.connectStatus, ...data.stats };
           } catch {}
+        },
+
+        async clearConnectQueue() {
+          const label = this.connectFilter ? this.connectFilter : 'pending';
+          if (!confirm(`Clear all ${label} items from the connect queue?`)) return;
+          try {
+            const params = new URLSearchParams();
+            if (this.connectFilter) params.set('status', this.connectFilter);
+            const res = await fetch(`/api/connect/queue?${params}`, { method: 'DELETE' });
+            const data = await res.json();
+            alert(`Cleared ${data.deleted} ${label} items from the queue.`);
+            await this.loadConnectStatus();
+          } catch {
+            alert('Failed to clear the connect queue.');
+          }
         },
 
         async startConnectWorker() {

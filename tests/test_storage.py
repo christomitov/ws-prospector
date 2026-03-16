@@ -238,3 +238,106 @@ def test_scrape_runs_filters(store):
 
     assert store.count_scrape_runs(status="failed") == 1
     assert store.count_scrape_runs(run_type="api_search") == 1
+
+
+# ── upsert_lead_by_url ──────────────────────────────────────────────────
+
+
+def test_upsert_lead_by_url_creates_new_lead(store):
+    lead_id = store.upsert_lead_by_url(
+        "https://www.linkedin.com/in/jane-doe", "Jane Doe"
+    )
+    assert lead_id > 0
+    rows = store.query()
+    assert len(rows) == 1
+    assert rows[0]["full_name"] == "Jane Doe"
+    assert rows[0]["linkedin_url"] == "https://www.linkedin.com/in/jane-doe"
+    assert rows[0]["source"] == "wealth_radar"
+
+
+def test_upsert_lead_by_url_returns_existing(store):
+    id1 = store.upsert_lead_by_url(
+        "https://www.linkedin.com/in/jane-doe", "Jane Doe"
+    )
+    id2 = store.upsert_lead_by_url(
+        "https://www.linkedin.com/in/jane-doe", "Jane Doe"
+    )
+    assert id1 == id2
+    assert store.count() == 1
+
+
+def test_upsert_lead_by_url_normalizes_trailing_slash(store):
+    id1 = store.upsert_lead_by_url(
+        "https://www.linkedin.com/in/jane-doe/", "Jane Doe"
+    )
+    id2 = store.upsert_lead_by_url(
+        "https://www.linkedin.com/in/jane-doe", "Jane Doe"
+    )
+    assert id1 == id2
+    assert store.count() == 1
+
+
+def test_upsert_lead_by_url_normalizes_case(store):
+    id1 = store.upsert_lead_by_url(
+        "https://www.linkedin.com/in/Jane-Doe", "Jane Doe"
+    )
+    id2 = store.upsert_lead_by_url(
+        "https://www.linkedin.com/in/jane-doe", "Jane Doe"
+    )
+    assert id1 == id2
+    assert store.count() == 1
+
+
+def test_upsert_lead_by_url_then_enqueue(store):
+    lead_id = store.upsert_lead_by_url(
+        "https://www.linkedin.com/in/jane-doe", "Jane Doe"
+    )
+    added = store.enqueue_connects([lead_id], note="Hello!")
+    assert added == 1
+    stats = store.connect_queue_stats()
+    assert stats["pending"] == 1
+
+    queue = store.connect_queue_list(status="pending")
+    assert len(queue) == 1
+    assert queue[0]["full_name"] == "Jane Doe"
+    assert queue[0]["note"] == "Hello!"
+
+
+# ── clear_connect_queue ──────────────────────────────────────────────────
+
+
+def test_clear_connect_queue_clears_pending_by_default(store):
+    store.upsert(_make_lead(name="A", url="https://www.linkedin.com/in/a"))
+    store.upsert(_make_lead(name="B", url="https://www.linkedin.com/in/b"))
+    ids = [r["id"] for r in store.query()]
+    store.enqueue_connects(ids)
+    assert store.connect_queue_stats()["pending"] == 2
+
+    deleted = store.clear_connect_queue()
+    assert deleted == 2
+    assert store.connect_queue_stats()["pending"] == 0
+
+
+def test_clear_connect_queue_clears_specific_status(store):
+    store.upsert(_make_lead(name="A", url="https://www.linkedin.com/in/a"))
+    store.upsert(_make_lead(name="B", url="https://www.linkedin.com/in/b"))
+    ids = [r["id"] for r in store.query()]
+    store.enqueue_connects(ids)
+
+    # Mark one as sent
+    item = store.next_pending_connect()
+    store.mark_connect(item["id"], "sent")
+
+    assert store.connect_queue_stats()["sent"] == 1
+    assert store.connect_queue_stats()["pending"] == 1
+
+    # Clear only sent
+    deleted = store.clear_connect_queue(status="sent")
+    assert deleted == 1
+    assert store.connect_queue_stats()["sent"] == 0
+    assert store.connect_queue_stats()["pending"] == 1
+
+
+def test_clear_connect_queue_returns_zero_when_empty(store):
+    deleted = store.clear_connect_queue()
+    assert deleted == 0
